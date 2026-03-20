@@ -1,0 +1,425 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{tcolorbox}
+\usepackage{titlesec}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue, citecolor=blue}
+
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{gray},
+  stringstyle=\color{red},
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+}
+
+\title{%
+  \textbf{Meeting Memo \#2} \\[6pt]
+  \large Objective 1: Physics-Informed XAI Transformer \\
+  for the Soil--Foundation--OWT $f_0$ Correlation Chain
+}
+\author{Youssef --- PFE Research Project}
+\date{February 20, 2026}
+
+\begin{document}
+\maketitle
+
+% ============================================================
+\section*{Pre-Meeting Note: Remote Desktop Setup for John}
+% ============================================================
+
+\begin{tcolorbox}[colback=blue!5, colframe=blue!50!black, title=IT Support Note]
+Before the research discussion, I helped \textbf{John} connect his personal computer
+to the \textbf{university desktop} via the \textbf{Remote Desktop} Windows app.
+
+\textbf{Problem:} The two computers were on different Wi-Fi networks, meaning they
+had different IP address ranges (e.g., John's laptop was on \texttt{192.168.1.x}
+at home while the university PC was on \texttt{10.0.5.x}). Windows Remote Desktop
+requires both machines to be reachable on the same network --- when IP addresses
+start with different numbers, direct connection is impossible.
+
+\textbf{Solution:} We installed \textbf{Tailscale} (\url{https://tailscale.com}) on
+both computers. Tailscale is a zero-config VPN built on WireGuard that assigns
+every device a shared virtual IP address starting with the same prefix
+(\texttt{100.x.x.x}). This means both machines appear to be on the same local network,
+regardless of their actual Wi-Fi. Steps taken:
+
+\begin{enumerate}[noitemsep]
+  \item Installed Tailscale on John's laptop and the university desktop.
+  \item Logged in with the same Tailscale account (or shared via Tailscale admin).
+  \item Both machines received IPs like \texttt{100.64.x.x} --- same prefix.
+  \item In the Remote Desktop app, John typed the university PC's \textbf{Tailscale IP}
+        (e.g., \texttt{100.64.0.2}) instead of the old LAN IP.
+  \item Connection succeeded instantly --- secure, encrypted, no port forwarding needed.
+\end{enumerate}
+
+\textbf{Key takeaway:} For Remote Desktop to work between two PCs, their IPs must be
+routable to each other (i.e., appear to start with the same network prefix).
+Tailscale creates this shared virtual network transparently.
+\end{tcolorbox}
+
+\vspace{1em}
+\hrule
+\vspace{1em}
+
+% ============================================================
+\section{Context: What Is Objective 1?}
+% ============================================================
+
+From the project proposal (Guangdong Provincial Natural Science Fund):
+
+\begin{quote}
+\textit{``Characterize how typhoon-induced soil stiffness degradation in Shenzhen
+marine clays alters monopile stiffness, and how these changes drive OWT system
+natural frequency shifts ($f_0$). Train a physics-informed XAI transformer that
+unifies soil, foundation, and superstructure response modelling. Utilize attention
+roll-out to quantify and clarify the multi-stage correlation chain.''}
+\end{quote}
+
+\textbf{Sources:}
+\begin{itemize}[noitemsep]
+  \item Abstract Summary Plan ENG (7).pdf, Objective~(1).
+  \item PostTyphoon\_OWT\_natural\_frequency\_shift\_prediction.pdf, Section~II-1, p.\,18.
+\end{itemize}
+
+The \textbf{correlation chain} to capture is:
+
+\[
+\underbrace{G/G_{\max} \downarrow}_{\text{Soil stiffness degradation}}
+\;\longrightarrow\;
+\underbrace{K_R, K_L, K_{LR} \downarrow}_{\text{Foundation stiffness change}}
+\;\longrightarrow\;
+\underbrace{f_0^{\text{OWT}} \downarrow}_{\text{Natural frequency shift}}
+\]
+
+% ============================================================
+\section{Step-by-Step Implementation Plan}
+% ============================================================
+
+% ------------------------------------------------------------
+\subsection{Step 1: Understand the Physics (the TIM Formulation)}
+% ------------------------------------------------------------
+
+The Thermodynamically consistent Inertial Macroelement (TIM) by Gorini (2025)
+provides the mathematical blueprint. Foundation stiffness degrades as:
+
+\begin{equation}
+  H_{ij}(t) = H^0_{ij} - \sum_{n=1}^{20} w_n(t) \cdot H^n_{ij}
+  \label{eq:stiffness_degradation}
+\end{equation}
+
+where:
+\begin{itemize}[noitemsep]
+  \item $H^0_{ij}$: initial 3DOF stiffness matrix (lateral, rotational, coupled),
+  \item $H^n_{ij}$: plastic stiffness drop matrix for the $n$-th yield surface,
+  \item $w_n(t) \in [0,1]$: sigmoid activation controlling when drop $n$ triggers.
+\end{itemize}
+
+\textbf{Physics constraints} (from the Laws of Thermodynamics):
+\begin{itemize}[noitemsep]
+  \item \textbf{LoT1 (energy conservation):} predicted foundation frequency must match
+        analytical frequency --- enforced via $\mathcal{L}_{\text{freq}}$.
+  \item \textbf{LoT2 (non-negative dissipation):} stiffness can only decrease, never
+        ``gain'' --- enforced via $\mathcal{L}_{\text{1mon}}$, $\mathcal{L}_{\text{2mon}}$,
+        $\mathcal{L}_{\text{pos}}$.
+\end{itemize}
+
+\textbf{Sources:}
+\begin{itemize}[noitemsep]
+  \item Gorini, D.N. (2025). ``A unified thermodynamic-based macroelement for
+        geotechnical systems.'' \textit{Computers and Geotechnics}, 179, 106965.
+        --- \href{https://www.sciencedirect.com/science/article/pii/S0266352X2200547X}{[Link]}
+  \item PostTyphoon PDF, Section 4.2.1, Figures 14--16, pp.\,30--33.
+\end{itemize}
+
+% ------------------------------------------------------------
+\subsection{Step 2: Prepare the Training Data}
+% ------------------------------------------------------------
+
+Two data sources feed the model:
+
+\begin{enumerate}[label=\textbf{\alph*)}]
+  \item \textbf{High-fidelity FEM simulations ($\sim$300 cases):}
+  \begin{itemize}[noitemsep]
+    \item OpenSees 3D FEM with MCP bounding-surface plasticity model for clay.
+    \item Dynamic pile pushover analyses across the parameter ranges in Table~\ref{tab:params}.
+    \item Extract load--displacement ($p$--$y$) and moment--rotation ($m$--$\theta$) curves
+          $\Rightarrow$ determine $H^0_{ij}$ (initial tangent) and $H^n_{ij}$ (secant drops).
+    \item Also extract participating mass matrices $m_{ij}$ from strain fields.
+  \end{itemize}
+
+  \item \textbf{Scaled physical experiments ($\sim$30 cases):}
+  \begin{itemize}[noitemsep]
+    \item 1:50 scale monopile-turbine models in Shenzhen marine clay.
+    \item Impact hammer tests at each typhoon loading stage to measure $f_0^{\text{OWT}}$.
+    \item Provides realistic load--$f_0$ data pairs for final model training.
+  \end{itemize}
+\end{enumerate}
+
+\begin{table}[h]
+\centering
+\caption{Parameter ranges for data generation (from PostTyphoon PDF, Table 2, p.\,25).}
+\label{tab:params}
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Range} \\
+\midrule
+Turbine size & 5--16 MW \\
+Pile diameter $D$ & 4--10 m \\
+Pile length $L$ & 25--60 m \\
+Pile bending stiffness $EI$ & 30--150 GNm$^2$ \\
+Clay strength $s_u$ & 20--130 kPa \\
+Clay stiffness $G_{\max}$ & 10--50 MPa \\
+Typhoon return periods & 5, 10, 50-year \\
+Water depth & 15--60 m \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Sources:}
+\begin{itemize}[noitemsep]
+  \item PostTyphoon PDF, Sections 2.1.1--2.1.2 and 4.1.1--4.1.2, pp.\,19--29.
+  \item Kato et al. (2023), Ocean Eng., 114338 --- prior 108 FEM simulations.
+\end{itemize}
+
+% ------------------------------------------------------------
+\subsection{Step 3: Design the Self-Calibration Module (Slot-Attention)}
+% ------------------------------------------------------------
+
+This module learns to \textit{auto-calibrate} the TIM stiffness matrices from basic
+soil/pile parameters, eliminating case-by-case manual calibration.
+
+\textbf{Architecture} (based on Locatello et al., 2020, Slot Attention):
+\begin{enumerate}[noitemsep]
+  \item \textbf{21 learnable slots:}
+    \begin{itemize}[noitemsep]
+      \item Slot 1 $\rightarrow$ generates $H^0_{ij}$ (initial 3DOF stiffness matrix).
+      \item Slots 2--21 $\rightarrow$ each generates one $H^n_{ij}$ drop matrix + its
+            sigmoid activation $w_n(t)$.
+    \end{itemize}
+  \item \textbf{Cross-attention layer:} maps encoder tokens (soil/pile properties)
+        to each slot.
+  \item \textbf{Self-attention layer:} shares context between slots to ensure each
+        specializes in a distinct stiffness drop (no overlap).
+  \item \textbf{MLP decoders:} per-slot shallow networks that output the actual
+        matrix values $H^0_{ij}$, $H^n_{ij}$, $w_n(t)$.
+\end{enumerate}
+
+\textbf{Pre-training loss:}
+\begin{equation}
+  \mathcal{L}_{\text{total}}^{\text{pre}} = \alpha\,\mathcal{L}_{\text{data}}^{\text{pre}}
+  + \beta\,\mathcal{L}_{\text{freq}}
+  + \gamma\,(\mathcal{L}_{\text{1mon}} + \mathcal{L}_{\text{2mon}})
+  + \delta\,\mathcal{L}_{\text{pos}}
+\end{equation}
+
+where:
+\begin{itemize}[noitemsep]
+  \item $\mathcal{L}_{\text{data}}^{\text{pre}}$: MSE between predicted and FEM
+        stiffness matrices.
+  \item $\mathcal{L}_{\text{freq}}$: predicted vs.\ analytical foundation frequency
+        (LoT1).
+  \item $\mathcal{L}_{\text{1mon}}$: monotonic decrease of $H^n_{ij}$ drops (LoT2).
+  \item $\mathcal{L}_{\text{2mon}}$: monotonic increase of $w_n(t)$ activations (LoT2).
+  \item $\mathcal{L}_{\text{pos}}$: non-negative $H_{ij}(t)$ at all times (LoT2).
+\end{itemize}
+
+\textbf{Sources:}
+\begin{itemize}[noitemsep]
+  \item Locatello et al. (2020). ``Object-centric learning with slot attention.''
+        \textit{NeurIPS}, 33, 11525--11538.
+  \item PostTyphoon PDF, Section 4.2.1, Figures 15--16, pp.\,30--33.
+\end{itemize}
+
+% ------------------------------------------------------------
+\subsection{Step 4: Build the Full Transformer Architecture}
+% ------------------------------------------------------------
+
+The full model follows a classic \textbf{encoder--decoder transformer}:
+
+\begin{enumerate}[noitemsep]
+  \item \textbf{Encoder:}
+    \begin{itemize}[noitemsep]
+      \item Tokenize fixed inputs (soil: $G_{\max}$, $s_u$; pile: $D$, $L$, $EI$)
+            and load time-series with sinusoidal positional encodings.
+      \item Self-attention layers process the embeddings.
+      \item Feed into the pre-trained self-calibration module $\Rightarrow$ outputs
+            updated $H_{ij}(t)$ at each load step.
+      \item An additional self-attention layer encodes the stiffness information.
+    \end{itemize}
+
+  \item \textbf{Decoder:}
+    \begin{itemize}[noitemsep]
+      \item Masked self-attention (prevents future-data leakage).
+      \item Cross-attention to encoder outputs: relates $H_{ij}(t)$ and load info
+            to previous $f_0^{\text{OWT}}(t)$ outputs.
+      \item Feed-forward network + dense linear layer $\Rightarrow$ predicts both
+            $H_{ij}(t)$ and $f_0^{\text{OWT}}(t)$ sequences.
+    \end{itemize}
+\end{enumerate}
+
+\textbf{Training loss:}
+\begin{equation}
+  \mathcal{L}_{\text{total}} = \alpha\,\mathcal{L}_{\text{data}}
+  + \beta\,\mathcal{L}_{\text{freq}}
+  + \gamma\,(\mathcal{L}_{\text{1mon}} + \mathcal{L}_{\text{2mon}})
+  + \delta\,\mathcal{L}_{\text{pos}}
+\end{equation}
+
+where $\mathcal{L}_{\text{data}}$ now uses NRMSE + MAPE on $f_0^{\text{OWT}}$.
+Experimental data receive higher loss weight than analytical data.
+
+\textbf{Source:} PostTyphoon PDF, Section 4.2.2, Figure 17, pp.\,33--35.
+
+% ------------------------------------------------------------
+\subsection{Step 5: Attention Roll-Out for XAI (Opening the Black Box)}
+% ------------------------------------------------------------
+
+This is the key innovation for Objective 1 --- \textbf{quantifying the correlation chain}.
+
+\begin{enumerate}[noitemsep]
+  \item \textbf{Record attention weights} from every multi-head attention block during
+        inference (encoder, slot-attention, decoder).
+  \item \textbf{Mean-head aggregation:} average attention weights across all heads
+        at each layer to get smooth $Q \times K$ matrices.
+  \item \textbf{Attention heat maps:}
+    \begin{itemize}[noitemsep]
+      \item Rows = encoder keys (soil params, load steps).
+      \item Columns = decoder queries (slot activations, $f_0$ time steps).
+      \item Visualize as heat maps with diverging colormaps.
+      \item Generate separate maps for the slot-attention module and the full transformer.
+    \end{itemize}
+  \item \textbf{Attention roll-out:}
+    \begin{itemize}[noitemsep]
+      \item Start from the final decoder cross-attention weights.
+      \item Propagate backward by multiplying encoder self-attention matrices across
+            all layers.
+      \item Result: an \textit{attribution vector} showing end-to-end contribution of
+            each input token to the final $f_0^{\text{OWT}}$ prediction.
+      \item Visualize as a bar chart aligned with load inputs and fixed parameters.
+    \end{itemize}
+  \item \textbf{Physics validation:} Compare attention patterns against known physical
+        expectations (e.g., peak loads should get high attention, $K_R$ should dominate
+        $f_0$ sensitivity per Bhattacharya 2019).
+\end{enumerate}
+
+\textbf{Sources:}
+\begin{itemize}[noitemsep]
+  \item PostTyphoon PDF, Sections 2.3.2 and 4.3.2, pp.\,23--24 and 36--37.
+  \item Bhattacharya, S. (2019). \textit{Design of foundations for offshore wind
+        turbines}. John Wiley \& Sons. --- showed $K_R$ dominates $f_0$ shifts.
+\end{itemize}
+
+% ------------------------------------------------------------
+\subsection{Step 6: Testing, Validation, and Iteration}
+% ------------------------------------------------------------
+
+\begin{enumerate}[noitemsep]
+  \item \textbf{Train/test split:} 85\%/15\% random split for both FEM and experimental
+        data. 3 out-of-domain experiments reserved for final validation.
+  \item \textbf{Self-calibration module testing:} MSE and $R^2$ on unseen FEM stiffness
+        matrices; pass if MAPE $< 10\%$ and bias $< 5\%$.
+  \item \textbf{Full model testing:} MSE and $R^2$ on unseen $f_0^{\text{OWT}}$ data;
+        target MAPE $< 1\%$ (since even 10\% $f_0$ shift is critical).
+  \item \textbf{Validation data:}
+    \begin{itemize}[noitemsep]
+      \item Centrifuge experiments from Lai et al.\ (2020) for foundation stiffness.
+      \item Field measurements from a 3.6 MW deployed OWT during a real storm.
+      \item 3 out-of-domain scaled experiments beyond Table~\ref{tab:params} ranges.
+    \end{itemize}
+  \item \textbf{Uncertainty quantification:} Add Gaussian noise to inputs; if CoV $> 10\%$,
+        refine attention regularization or physics losses.
+  \item \textbf{Iterate:} Use attention heat maps to identify weak points, prune
+        low-attention inputs, increase sampling in high-attention load windows.
+\end{enumerate}
+
+\textbf{Source:} PostTyphoon PDF, Sections 2.3.1 and 4.3.1, pp.\,22--23 and 35--36.
+
+% ============================================================
+\section{Summary: The Big Picture}
+% ============================================================
+
+\begin{center}
+\begin{tabular}{cp{10cm}}
+\toprule
+\textbf{Step} & \textbf{What You Do} \\
+\midrule
+1 & Learn TIM physics: how $H_{ij}(t)$ degrades via yield surfaces \\
+2 & Generate training data: $\sim$300 FEM + $\sim$30 experiments \\
+3 & Pre-train slot-attention module: learns $H^0_{ij}$, $H^n_{ij}$, $w_n(t)$ from soil/pile params \\
+4 & Train full transformer: encoder (loads + self-calibration) $\to$ decoder ($f_0^{\text{OWT}}$) \\
+5 & Attention roll-out: quantify each link in the soil $\to$ foundation $\to$ $f_0$ chain \\
+6 & Test, validate, iterate using XAI insights \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ============================================================
+\section{Key References for Objective 1}
+% ============================================================
+
+\begin{enumerate}[noitemsep]
+  \item Cheng et al.\ (2023). Dynamic response analysis of monopile OWTs considering
+        stiffness degradation of clay. \textit{Comput.\ Geotech.} ---
+        \href{https://www.sciencedirect.com/science/article/pii/S0266352X2200547X}{Link}
+
+  \item Kato, Bhattacharya \& Wang (2023). Evaluation of post-storm soil stiffness
+        degradation effects on OWTs in clay. \textit{Ocean Eng.}, 114338 ---
+        \href{https://www.sciencedirect.com/science/article/pii/S0029801823007229}{Link}
+
+  \item Ding, Chian et al.\ (2023). Wind-wave combined effect on soil-monopile-OWT.
+        \textit{Comput.\ Geotech.} ---
+        \href{https://www.sciencedirect.com/science/article/pii/S0266352X2200461X}{Link}
+
+  \item Xu, Huang et al.\ (2025). OWT monopiles under real wind and wave:
+        cyclic softening of clays. \textit{Ocean Eng.} ---
+        \href{https://www.sciencedirect.com/science/article/pii/S0029801825001647}{Link}
+
+  \item Cheng, Xing et al.\ (2025). Rotation accumulation and natural frequency
+        degradation for OWT in clays. \textit{Ocean Eng.} ---
+        \href{https://www.sciencedirect.com/science/article/pii/S0029801824030993}{Link}
+
+  \item Gorini, D.N.\ (2025). A unified thermodynamic-based macroelement. \textit{Comput.\
+        Geotech.}, 179, 106965.
+
+  \item Locatello et al.\ (2020). Object-centric learning with slot attention.
+        \textit{NeurIPS}, 33, 11525--11538.
+
+  \item Bhattacharya, S.\ (2019). \textit{Design of foundations for offshore wind
+        turbines}. Wiley.
+
+  \item Shadlou \& Bhattacharya (2016). Dynamic stiffness of monopiles. \textit{Soil
+        Dyn.\ Earthq.\ Eng.}, 88, 15--32.
+
+  \item Lai et al.\ (2020). Centrifuge modeling of cyclic lateral behavior of
+        monopiles in soft clay. \textit{Ocean Eng.}, 200, 107048.
+\end{enumerate}
+
+% ============================================================
+\section{Companion Code}
+% ============================================================
+
+A simplified but comprehensive Python demo is provided in the companion file:
+
+\begin{center}
+  \texttt{objective1\_XAI\_transformer\_demo.py}
+\end{center}
+
+This demo implements a minimal version of the full architecture (slot-attention
+self-calibration module + encoder-decoder transformer + physics losses +
+attention roll-out) using PyTorch, with synthetic data mimicking the real
+parameter ranges. It is meant as a \textbf{proof-of-concept} to understand each
+component before scaling to real FEM/experimental data.
+
+\end{document}

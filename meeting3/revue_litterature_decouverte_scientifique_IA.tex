@@ -1,0 +1,483 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{amsmath,amssymb}
+\usepackage{geometry,enumitem,booktabs,xcolor}
+\usepackage{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,decorations.pathreplacing,mindmap,shapes.geometric}
+\usepackage{hyperref}
+\usepackage{longtable}
+
+\geometry{margin=2cm}
+\hypersetup{colorlinks=true,linkcolor=blue!60!black,urlcolor=blue!70!black,citecolor=green!50!black}
+\tcbuselibrary{skins}
+
+\definecolor{discover}{HTML}{2E86AB}
+\definecolor{physics}{HTML}{A23B72}
+\definecolor{symbolic}{HTML}{F18F01}
+\definecolor{structure}{HTML}{2CA58D}
+\definecolor{foundation}{HTML}{7B2D8E}
+
+\title{\textbf{Revue de littérature}\\[4pt]
+\Large Découverte scientifique par intelligence artificielle\\[4pt]
+\large Des réseaux informés par la physique à la découverte automatique de structures\\[6pt]
+\normalsize Point de départ\,: $\Psi$-NN (Liu et al., \textit{Nature Communications}, 2025)}
+\author{PFE -- Réunion 3}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent Cette revue de littérature cartographie le domaine émergent de la \textbf{découverte scientifique par IA}, au-delà de l'utilisation de l'IA comme outil boîte noire, vers une IA qui \emph{découvre} des lois physiques, des symétries, des équations et des structures de manière autonome. L'article $\Psi$-NN (Liu et al., 2025) sert de point d'entrée, situé à l'intersection de l'apprentissage informé par la physique, de la distillation de connaissances et de la découverte automatique de symétries. Le domaine est organisé en six axes de recherche majeurs, avec les travaux fondateurs de chacun, ainsi que les problèmes ouverts et les connexions.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%=================================================================
+\section{Panorama du domaine}
+%=================================================================
+
+\begin{center}
+\begin{tikzpicture}[
+    every node/.style={font=\small},
+    axis/.style={draw,rounded corners=4pt,minimum height=1.1cm,text width=3.5cm,align=center,font=\small\bfseries},
+    link/.style={-{Stealth[length=2mm]},thick,gray!60},
+    entry/.style={draw,rounded corners=6pt,very thick,minimum height=1.2cm,text width=3.8cm,align=center,fill=red!8,font=\small\bfseries}
+]
+\node[entry] (psi) {$\Psi$-NN\\(Liu et al., 2025)\\{\footnotesize\textit{Notre point de départ}}};
+
+\node[axis,fill=physics!15]   (ax1) at (-5.5, 2.5) {Axe 1\\Réseaux informés\\par la physique};
+\node[axis,fill=symbolic!15]  (ax2) at (0, 4.2)     {Axe 2\\Régression symbolique\\Découverte d'éq.};
+\node[axis,fill=structure!15] (ax3) at (5.5, 2.5)   {Axe 3\\Symétries \&\\Découverte de struct.};
+\node[axis,fill=discover!15]  (ax4) at (5.5,-2.5)   {Axe 4\\Opérateurs neuronaux\\\& substituts};
+\node[axis,fill=foundation!15](ax5) at (0,-4.2)     {Axe 5\\Modèles de fondation\\pour la science};
+\node[axis,fill=orange!15]    (ax6) at (-5.5,-2.5)  {Axe 6\\IA interprétable\\\& explicable};
+
+\draw[link] (psi) -- (ax1);
+\draw[link] (psi) -- (ax2);
+\draw[link,very thick,green!50!black] (psi) -- (ax3);
+\draw[link] (psi) -- (ax4);
+\draw[link] (psi) -- (ax5);
+\draw[link] (psi) -- (ax6);
+
+\draw[link,dashed] (ax1) -- (ax2);
+\draw[link,dashed] (ax2) -- (ax3);
+\draw[link,dashed] (ax3) -- (ax4);
+\draw[link,dashed] (ax1) -- (ax6);
+\draw[link,dashed] (ax5) -- (ax4);
+\draw[link,dashed] (ax6) -- (ax2);
+\end{tikzpicture}
+\end{center}
+
+\begin{tcolorbox}[colback=red!3,colframe=red!50!black,title={\small Insight clé\,: qu'est-ce qui distingue la «\,découverte\,» de la simple «\,application\,»\,?}]
+\small
+\textbf{Application\,:} Entraîner un réseau de neurones pour approcher la solution d'une EDP connue.\\
+\textbf{Découverte\,:} L'IA \emph{trouve} l'équation, la symétrie ou la structure qui était auparavant inconnue.\\[3pt]
+$\Psi$-NN se situe à cette frontière\,: il prend une EDP connue mais \textbf{découvre} les symétries structurelles cachées de l'espace de solution que même l'expert humain n'avait pas encodées.
+\end{tcolorbox}
+
+%=================================================================
+\section{Axe 1\,: Réseaux de neurones informés par la physique (PINNs)}
+%=================================================================
+
+\subsection{Fondation}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{}p{3.5cm} p{4cm} p{5.5cm}@{}}
+\toprule
+\textbf{Article} & \textbf{Contribution clé} & \textbf{Pertinence pour la découverte} \\
+\midrule
+Raissi, Perdikaris \& Karniadakis (2019) \textit{J.\ Comput.\ Phys.} & Introduction des PINNs\,: intégration des EDP dans la perte & Couche fondatrice\,; physique comme contrainte souple uniquement \\
+\addlinespace
+Lagaris et al.\ (1998) \textit{IEEE Trans.\ NN} & Premiers réseaux contraints par la physique pour EDO/EDP & Précurseur historique\,; contraintes aux limites dures \\
+\addlinespace
+Lu et al.\ (2021) \textit{SIAM Review} & Framework DeepXDE\,; raffinement adaptatif par résidus & Boîte à outils pratique\,; PINNs à l'échelle \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Limitations clés motivant la découverte}
+
+\begin{enumerate}[leftmargin=1.8em,itemsep=2pt]
+\item \textbf{Contrainte souple uniquement\,:} l'EDP est dans la perte $\Rightarrow$ aucune garantie de satisfaction.
+\item \textbf{Biais spectral\,:} les réseaux apprennent les basses fréquences en premier $\Rightarrow$ médiocre sur problèmes multi-échelles.
+\item \textbf{Difficulté d'entraînement\,:} équilibrage perte EDP vs.\ conditions limites vs.\ données.
+\item \textbf{Aucune conscience structurelle\,:} le réseau ne «\,sait\,» rien des symétries, lois de conservation, etc.
+\end{enumerate}
+
+$\Rightarrow$ Ces limitations motivent des méthodes qui vont au-delà des PINNs\,: découvrir et intégrer la structure.
+
+\subsection{Extensions vers la découverte}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}p{4cm} p{3.5cm} p{5.5cm}@{}}
+\toprule
+\textbf{Article} & \textbf{Méthode} & \textbf{Aspect découverte} \\
+\midrule
+Wang et al.\ (2021) \textit{SIAM J.\ Sci.\ Comput.} & Équilibrage NTK des pertes & Découvre la dynamique d'entraînement optimale \\
+Jagtap \& Karniadakis (2020) & Fonctions d'activation adaptatives & Le réseau découvre la meilleure non-linéarité \\
+McClenny \& Brainerd (2023) & PINNs auto-adaptatifs & Découvre où la physique est difficile à satisfaire \\
+\textbf{Liu et al.\ (2025)} & \textbf{$\Psi$-NN} & \textbf{Découvre la structure de symétrie dans les poids} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%=================================================================
+\section{Axe 2\,: Régression symbolique et découverte d'équations}
+%=================================================================
+
+\textbf{Objectif\,:} À partir de données, trouver l'\emph{équation en forme fermée} qui les a générées.
+
+\subsection{Méthodes fondatrices}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{}p{3.5cm} p{3cm} p{3cm} p{3cm}@{}}
+\toprule
+\textbf{Article} & \textbf{Méthode} & \textbf{Approche} & \textbf{Résultat clé} \\
+\midrule
+Schmidt \& Lipson (2009) \textit{Science} & Eureqa & Programmation génétique & A redécouvert les lois de Newton à partir de données \\
+\addlinespace
+Brunton et al.\ (2016) \textit{PNAS} & SINDy & Régression sparse sur bibliothèque de fonctions & Découvre les EDO/EDP gouvernantes à partir de séries temporelles \\
+\addlinespace
+Udrescu \& Tegmark (2020) \textit{Sci.\ Advances} & AI Feynman & Réseau + simplification symbolique & A redécouvert 100 équations physiques des cours de Feynman \\
+\addlinespace
+Cranmer (2023) & PySR & Programmation génétique optimisée avec régularisation & État de l'art open-source en régression symbolique \\
+\addlinespace
+Long et al.\ (2018) \textit{ICML} & PDE-Net & CNN apprend les coefficients de l'EDP & Découvre la forme de l'EDP à partir de données spatio-temporelles \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Connexion avec $\Psi$-NN}
+
+\begin{tcolorbox}[colback=symbolic!5,colframe=symbolic!70!black]
+\small
+\textbf{SINDy/AI Feynman} découvrent l'\emph{équation} à partir des données.\\
+\textbf{$\Psi$-NN} découvre les \emph{symétries structurelles de la solution} à partir de l'équation.\\[3pt]
+Ils sont complémentaires\,: l'un travaille en amont (quelle est l'EDP\,?), l'autre en aval (quelle structure l'EDP impose-t-elle à la solution\,?). Un pipeline complet enchaînerait les deux.
+\end{tcolorbox}
+
+\subsection{Avancées récentes}
+
+\begin{itemize}[leftmargin=1.8em,itemsep=2pt]
+\item \textbf{Symbolic GPT} (Biggio et al., 2021)\,: Transformer entraîné à produire des expressions symboliques à partir de données numériques.
+\item \textbf{E2E Symbolic Regression} (Kamienny et al., 2022, \textit{NeurIPS})\,: Transformer de bout en bout pour la régression symbolique.
+\item \textbf{$\Phi$-SO} (Tenachi et al., 2023, \textit{NeurIPS})\,: Optimisation symbolique physique -- utilise l'analyse dimensionnelle pour contraindre la recherche.
+\item \textbf{LLM-SR} (Shojaee et al., 2024)\,: Utilise des LLM pour proposer et affiner des expressions symboliques.
+\end{itemize}
+
+%=================================================================
+\section{Axe 3\,: Découverte de symétries et de structures}
+%=================================================================
+
+C'est l'axe où se situe $\Psi$-NN. L'objectif\,: \textbf{trouver automatiquement les symétries, invariances et lois de conservation à partir de données ou de modèles}.
+
+\subsection{Taxonomie}
+
+\begin{center}
+\begin{tikzpicture}[
+    every node/.style={font=\small},
+    cat/.style={draw,rounded corners=3pt,minimum height=0.8cm,text width=4.5cm,align=center,fill=structure!8},
+    arr/.style={-{Stealth[length=2mm]},thick}
+]
+\node[cat,fill=structure!20,font=\bfseries] (root) at (0,0) {Découverte de symétries par IA};
+\node[cat] (eq) at (-5,-1.8) {Réseaux équivariants\\(encodent des symétries connues)};
+\node[cat] (learn) at (0,-1.8) {Symétries apprises\\(découvertes à partir de données)};
+\node[cat] (extract) at (5,-1.8) {Extraction a posteriori\\(découvertes depuis un modèle entraîné)};
+\draw[arr] (root) -- (eq);
+\draw[arr] (root) -- (learn);
+\draw[arr] (root) -- (extract);
+
+\node[below=0.2cm of eq,font=\scriptsize,gray,text width=4.5cm,align=center] {GNN E(n)-équivariants\\CNN orientables\\Convolutions de groupes de Lie};
+\node[below=0.2cm of learn,font=\scriptsize,gray,text width=4.5cm,align=center] {LieGAN\\L-conv\\Méta-apprentissage de symétries};
+\node[below=0.2cm of extract,font=\scriptsize,text width=4.5cm,align=center,green!50!black] {\textbf{$\Psi$-NN (Liu et al., 2025)}\\Clustering au niveau des neurones\\Factorisation des matrices de poids};
+\end{tikzpicture}
+\end{center}
+
+\subsection{Articles clés}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{}p{3.8cm} p{3.5cm} p{5.2cm}@{}}
+\toprule
+\textbf{Article} & \textbf{Ce qu'il découvre} & \textbf{Comment} \\
+\midrule
+Cohen \& Welling (2016) \textit{ICML} & CNN équivariants par groupe & Encode des symétries connues dans les filtres de convolution \\
+\addlinespace
+Weiler et al.\ (2018) & CNN orientables & Équivariance $E(2)$ générale via filtres orientables \\
+\addlinespace
+Satorras et al.\ (2021) \textit{ICML} & GNN E(n) équivariants (EGNN) & Réseaux de graphes SE(3)-équivariants pour les molécules \\
+\addlinespace
+\textbf{Moskalev et al.\ (2022)} \textit{NeurIPS} & \textbf{LieGAN} & \textbf{GAN découvre les symétries de groupes de Lie à partir de données} \\
+\addlinespace
+Yang et al.\ (2023) & Découverte générative de symétries & Apprend des transformations de symétrie continues \\
+\addlinespace
+Desai et al.\ (2022) & Symétries depuis la forme de l'éq. & Calcul symbolique des symétries de Lie \\
+\addlinespace
+\textbf{Liu et al.\ (2025)} & \textbf{$\Psi$-NN} & \textbf{Distillation $\to$ clustering $\to$ matrice de relation $\R$} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Ce que $\Psi$-NN apporte à cet axe}
+
+\begin{tcolorbox}[colback=structure!5,colframe=structure!70!black,title={\small Contribution unique de $\Psi$-NN}]
+\small
+\begin{itemize}[leftmargin=1.2em,itemsep=1pt]
+\item La plupart des méthodes équivariantes \textbf{encodent des symétries connues}. $\Psi$-NN \textbf{découvre des symétries inconnues}.
+\item Contrairement à LieGAN (qui travaille dans l'espace des données), $\Psi$-NN travaille dans l'\textbf{espace des poids}.
+\item La matrice de relation $\mathbf{R}$ est \textbf{interprétable}\,: chaque entrée correspond à une symétrie physique (partage, inversion de signe, permutation).
+\item Limitation\,: actuellement restreint aux symétries discrètes de signe/permutation, pas aux groupes de Lie continus.
+\end{itemize}
+\end{tcolorbox}
+
+%=================================================================
+\section{Axe 4\,: Opérateurs neuronaux et substituts appris}
+%=================================================================
+
+\textbf{Objectif\,:} Apprendre l'\emph{opérateur de solution} $\mathcal{G}: f \mapsto u$ (mapping fonction-à-fonction), pas une seule solution.
+
+\subsection{Architectures clés}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{}p{3.5cm} p{3.5cm} p{5.5cm}@{}}
+\toprule
+\textbf{Article} & \textbf{Architecture} & \textbf{Potentiel de découverte} \\
+\midrule
+Lu et al.\ (2021) \textit{Nature Mach.\ Intell.} & DeepONet & Approximation universelle d'opérateurs\,; peut apprendre des opérateurs inconnus à partir de données \\
+\addlinespace
+Li et al.\ (2021) \textit{ICLR} & Opérateur neuronal de Fourier (FNO) & Apprentissage spectral\,; invariant en résolution\,; capture la physique multi-échelle \\
+\addlinespace
+Kovachki et al.\ (2023) & Survey des opérateurs neuronaux & Cadre unifiant toutes les méthodes d'apprentissage d'opérateurs \\
+\addlinespace
+Hao et al.\ (2023) & GNOT & Transformer opérateur neuronal général\,; basé sur l'attention \\
+\addlinespace
+Brandstetter et al.\ (2022) & Solveur EDP par passage de messages & Basé sur GNN\,; apprend les règles de mise à jour \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Connexion avec la découverte}
+
+Les opérateurs neuronaux peuvent découvrir\,:
+\begin{itemize}[leftmargin=1.8em,itemsep=2pt]
+\item \textbf{Des opérateurs gouvernants inconnus} à partir de paires entrée-sortie.
+\item \textbf{Des modèles de fermeture} pour la physique non résolue (turbulence, sous-maille).
+\item \textbf{Des lois constitutives} dans les problèmes multiphysiques.
+\end{itemize}
+
+Combiner les opérateurs neuronaux avec la découverte de structure de $\Psi$-NN\,: un opérateur neuronal qui \textbf{révèle aussi les symétries} de l'opérateur qu'il a appris $\Rightarrow$ direction de recherche ouverte.
+
+%=================================================================
+\section{Axe 5\,: Modèles de fondation pour la science}
+%=================================================================
+
+\textbf{Objectif\,:} De grands modèles pré-entraînés transférables entre tâches scientifiques, analogues à GPT/BERT en NLP.
+
+\subsection{Systèmes marquants}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{}p{3.5cm} p{3cm} p{6cm}@{}}
+\toprule
+\textbf{Système} & \textbf{Domaine} & \textbf{Découverte} \\
+\midrule
+AlphaFold 2 (Jumper et al., 2021, \textit{Nature}) & Structure protéique & Prédit la structure 3D de \textasciitilde200M de protéines\,; Prix Nobel 2024 \\
+\addlinespace
+GNoME (Merchant et al., 2023, \textit{Nature}) & Science des matériaux & A découvert 2,2M de nouvelles structures cristallines stables \\
+\addlinespace
+Galactica (Taylor et al., 2022) & Texte scientifique & LLM entraîné sur 48M d'articles scientifiques \\
+\addlinespace
+FourCastNet (Pathak et al., 2022) & Météorologie & Prévision météo mondiale basée sur FNO \\
+\addlinespace
+GenCast (Price et al., 2024, \textit{Nature}) & Météorologie & Prévision météo probabiliste par diffusion \\
+\addlinespace
+MACE-MP-0 (Batatia et al., 2024) & Dynamique moléculaire & Potentiel interatomique universel pour le tableau périodique \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Pertinence}
+
+Ces systèmes montrent que l'IA peut réaliser de \textbf{véritables découvertes scientifiques} à grande échelle. Le schéma clé\,:
+\begin{enumerate}[leftmargin=1.8em,itemsep=2pt]
+\item Pré-entraîner sur des données scientifiques massives.
+\item Intégrer des contraintes physiques (symétrie, conservation) dans l'architecture.
+\item Générer des prédictions au-delà des données connues $\Rightarrow$ découverte.
+\end{enumerate}
+
+L'approche de $\Psi$-NN (auto-découverte de structure) pourrait augmenter l'étape 2\,: au lieu de concevoir manuellement des architectures équivariantes, laisser le modèle découvrir quelles symétries intégrer.
+
+%=================================================================
+\section{Axe 6\,: IA interprétable et explicable pour la science}
+%=================================================================
+
+\textbf{Objectif\,:} Pas seulement des prédictions précises, mais \emph{comprendre} ce que le modèle a appris -- extraire de l'insight scientifique.
+
+\subsection{Approches clés}
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{}p{3.5cm} p{3cm} p{6cm}@{}}
+\toprule
+\textbf{Méthode} & \textbf{Type} & \textbf{Insight scientifique extrait} \\
+\midrule
+SHAP (Lundberg \& Lee, 2017) & Attribution post-hoc & Quelles caractéristiques d'entrée comptent pour chaque prédiction \\
+\addlinespace
+Concept Bottleneck Models (Koh et al., 2020) & Interprétable par conception & Projette vers des concepts scientifiques définis par l'humain \\
+\addlinespace
+Auto-encodeurs sparse (Cunningham et al., 2023) & Interprétabilité mécaniste & Découvre des caractéristiques interprétables dans les couches cachées \\
+\addlinespace
+Modèles additifs neuronaux (Agarwal et al., 2021) & Intrinsèquement interprétable & Apprend une décomposition additive des effets \\
+\addlinespace
+\textbf{$\Psi$-NN (Liu et al., 2025)} & \textbf{Extraction de structure a posteriori} & \textbf{$\mathbf{R}$ correspond à des symétries physiques} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Pourquoi l'interprétabilité compte pour la découverte}
+
+\begin{tcolorbox}[colback=orange!3,colframe=orange!60!black]
+\small Une IA boîte noire atteignant 99\,\% de précision est un \textbf{outil d'application}. Une IA dont les représentations internes se lisent comme des lois physiques est un \textbf{outil de découverte}. La matrice de relation de $\Psi$-NN est un pas vers ce dernier\,: la structure de $\mathbf{R}$ correspond directement aux symétries de l'EDP.
+\end{tcolorbox}
+
+%=================================================================
+\section{Synthèse\,: comment $\Psi$-NN connecte les axes}
+%=================================================================
+
+\begin{center}
+\begin{tikzpicture}[
+    every node/.style={font=\footnotesize},
+    psi/.style={draw,very thick,rounded corners=5pt,fill=red!8,minimum height=0.9cm,text width=3cm,align=center,font=\small\bfseries},
+    conn/.style={draw,rounded corners=3pt,fill=gray!5,minimum height=0.7cm,text width=5.5cm,align=left,font=\footnotesize},
+    arr/.style={-{Stealth[length=2mm]},thick,gray!70}
+]
+\node[psi] (psi) at (0,0) {$\Psi$-NN};
+
+\node[conn] (c1) at (7, 2.5) {\textbf{PINNs\,:} Étend les PINNs en intégrant la physique dans les poids, pas juste la perte};
+\node[conn] (c2) at (7, 1.3) {\textbf{Symbolique\,:} Complémentaire -- découvre la structure, pas les équations};
+\node[conn] (c3) at (7, 0.1) {\textbf{Symétrie\,:} Première méthode auto-découvrant les symétries signe/permutation dans les poids PINN};
+\node[conn] (c4) at (7,-1.1) {\textbf{Opérateurs\,:} Le transfert de structure est un proto-apprentissage d'opérateur};
+\node[conn] (c5) at (7,-2.3) {\textbf{Fondation\,:} Pourrait automatiser la conception d'architecture des modèles scientifiques};
+\node[conn] (c6) at (7,-3.5) {\textbf{XAI\,:} La matrice $\mathbf{R}$ est intrinsèquement interprétable};
+
+\draw[arr] (psi) -- (c1.west);
+\draw[arr] (psi) -- (c2.west);
+\draw[arr] (psi) -- (c3.west);
+\draw[arr] (psi) -- (c4.west);
+\draw[arr] (psi) -- (c5.west);
+\draw[arr] (psi) -- (c6.west);
+\end{tikzpicture}
+\end{center}
+
+%=================================================================
+\section{Problèmes ouverts et directions futures}
+%=================================================================
+
+\begin{center}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{@{}c p{5cm} p{6.5cm}@{}}
+\toprule
+\textbf{\#} & \textbf{Problème ouvert} & \textbf{Pourquoi c'est important} \\
+\midrule
+1 & Étendre $\Psi$-NN aux symétries continues (rotations, groupes de Lie) & Méthode actuelle limitée aux inversions de signe et permutations \\
+2 & Appliquer la découverte de structure aux Transformers / architectures à attention & $\Psi$-NN validé uniquement sur MLP 3 couches + $\tanh$ \\
+3 & Pipeline de bout en bout\,: données $\to$ équation $\to$ structure $\to$ solveur contraint & Combiner SINDy/AI Feynman + $\Psi$-NN + opérateur neuronal \\
+4 & Découvrir des lois de conservation, pas seulement des symétries & Le théorème de Noether lie symétries et quantités conservées \\
+5 & Passage à l'échelle pour les EDP de haute dimension (100+ dimensions) & Les benchmarks actuels sont en 2D--3D \\
+6 & Modèle de fondation pour la structure des EDP & Pré-entraîner sur de nombreuses EDP, transférer les structures découvertes \\
+7 & Vérification formelle des symétries découvertes & Actuellement empirique\,; nécessite des garanties mathématiques \\
+8 & Découvrir la brisure de symétrie & De nombreux systèmes physiques ont des symétries approchées ou brisées \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%=================================================================
+\section{Plan de lecture suggéré}
+%=================================================================
+
+Organisé du fondamental au avancé, priorisé pour la direction du PFE.
+
+\subsection{Niveau 1\,: Lecture indispensable (fondation)}
+
+\begin{enumerate}[leftmargin=1.8em,itemsep=3pt]
+\item \textbf{Raissi et al.} (2019) -- PINNs. \textit{J.\ Comput.\ Phys.} 378, 686--707.
+\item \textbf{Liu et al.} (2025) -- $\Psi$-NN. \textit{Nature Communications} 16, 9558. \textcolor{red}{$\star$ Notre article de départ.}
+\item \textbf{Brunton et al.} (2016) -- SINDy. \textit{PNAS} 113(15), 3932--3937.
+\item \textbf{Udrescu \& Tegmark} (2020) -- AI Feynman. \textit{Science Advances} 6(16).
+\item \textbf{Li et al.} (2021) -- Opérateur neuronal de Fourier. \textit{ICLR}.
+\end{enumerate}
+
+\subsection{Niveau 2\,: Important (focus symétries \& structures)}
+
+\begin{enumerate}[leftmargin=1.8em,itemsep=3pt]
+\setcounter{enumi}{5}
+\item \textbf{Moskalev et al.} (2022) -- LieGAN\,: découverte de symétries avec des GAN. \textit{NeurIPS}.
+\item \textbf{Cohen \& Welling} (2016) -- CNN équivariants par groupe. \textit{ICML}.
+\item \textbf{Satorras et al.} (2021) -- GNN E(n) équivariants. \textit{ICML}.
+\item \textbf{Long et al.} (2018) -- PDE-Net. \textit{ICML}.
+\item \textbf{Lu et al.} (2021) -- DeepONet. \textit{Nature Machine Intelligence} 3, 218--229.
+\end{enumerate}
+
+\subsection{Niveau 3\,: Paysage élargi}
+
+\begin{enumerate}[leftmargin=1.8em,itemsep=3pt]
+\setcounter{enumi}{10}
+\item \textbf{Jumper et al.} (2021) -- AlphaFold 2. \textit{Nature} 596, 583--589.
+\item \textbf{Merchant et al.} (2023) -- GNoME. \textit{Nature} 624, 80--85.
+\item \textbf{Cranmer} (2023) -- PySR\,: régression symbolique interprétable.
+\item \textbf{Tenachi et al.} (2023) -- $\Phi$-SO\,: optimisation symbolique physique. \textit{NeurIPS}.
+\item \textbf{Kovachki et al.} (2023) -- Survey des opérateurs neuronaux.
+\end{enumerate}
+
+%=================================================================
+\section{Tableau de synthèse\,: comparaison des méthodes}
+%=================================================================
+
+\begin{center}
+\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}l c c c c c@{}}
+\toprule
+\textbf{Méthode} & \textbf{Découvre} & \textbf{EDP req.\,?} & \textbf{Interprétable\,?} & \textbf{Transférable\,?} & \textbf{Architecture} \\
+\midrule
+PINN & Rien (solveur) & Oui & Non & Non & MLP \\
+SINDy & Équations & Non (données) & Oui & N/A & Rég.\ sparse \\
+AI Feynman & Équations & Non (données) & Oui & N/A & RN + symbolique \\
+PDE-Net & Coefficients EDP & Partiel & Partiel & Non & CNN \\
+FNO & Opérateur & Non & Non & Oui & Couches Fourier \\
+DeepONet & Opérateur & Non & Non & Oui & Branche-tronc \\
+LieGAN & Sym.\ de Lie & Non & Oui & Non & GAN \\
+E(n)-GNN & Encode la symét. & Sym.\ connue & Oui & Oui & GNN \\
+\textbf{$\Psi$-NN} & \textbf{Struct.\ des poids} & \textbf{Oui} & \textbf{Oui} & \textbf{Oui} & \textbf{MLP} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+%=================================================================
+\section{Conclusion}
+%=================================================================
+
+Le domaine de la découverte scientifique par IA s'étend rapidement au-delà de l'utilisation des réseaux de neurones comme approximateurs boîte noire. L'article $\Psi$-NN représente une étape concrète dans cette direction\,: il montre que la \textbf{structure physique peut être automatiquement extraite d'un réseau entraîné} puis \textbf{encodée en dur dans l'architecture}.
+
+Le paysage de recherche plus large connecte six axes complémentaires\,:
+\begin{itemize}[leftmargin=1.8em,itemsep=1pt]
+\item Les PINNs fournissent la fondation informée par la physique.
+\item La régression symbolique découvre les équations.
+\item La découverte de symétries (où $\Psi$-NN contribue) trouve les contraintes structurelles.
+\item Les opérateurs neuronaux apprennent les mappings de solutions.
+\item Les modèles de fondation étendent la découverte à de nouveaux domaines.
+\item L'IA interprétable assure que les connaissances découvertes sont lisibles par l'humain.
+\end{itemize}
+
+Les travaux futurs les plus impactants se situent probablement aux \textbf{intersections}\,: combiner la découverte d'équations avec la découverte de structures, étendre l'extraction de symétries aux architectures modernes (Transformers), et construire des modèles de fondation qui découvrent et intègrent automatiquement les lois physiques.
+
+\end{document}
