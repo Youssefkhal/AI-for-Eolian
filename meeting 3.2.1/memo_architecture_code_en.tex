@@ -1,0 +1,79 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{hyperref}
+
+\title{Post-typhoon OWT -- Architecture and Code Explanation (Simple Version)}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Purpose}
+This memo explains a simplified implementation of the architecture required in pages 29--37 of the
+PostTyphoon OWT document. The design preserves the mandatory 21-slot self-calibration module and
+connects it to a transformer-style predictor of $f_0^{\mathrm{OWT}}$.
+
+\section{System overview}
+\textbf{Pipeline:}
+\begin{itemize}
+  \item Inputs: load history (time series) and soil/pile parameters.
+  \item Slot-attention module: outputs $H_{ij}^0$ and 20 plastic drops $H_{ij}^n$ with gates $w_n(t)$.
+  \item Stiffness evolution: $H_{ij}(t) = H_{ij}^0 - \sum_{n=1}^{20} w_n(t)\,H_{ij}^n$.
+  \item Transformer encoder: consumes load tokens and stiffness-informed representation.
+  \item Output: predicted $f_0^{\mathrm{OWT}}(t)$ sequence.
+\end{itemize}
+
+\section{Mandatory 21-slot module}
+The 21 slots follow the physics-based macroelement template:
+\begin{itemize}
+  \item Slot 1 produces the initial 3DOF stiffness matrix $H_{ij}^0$.
+  \item Slots 2--21 each produce a plastic drop matrix $H_{ij}^n$ and a gate parameterized by $w_n(t)$.
+  \item Gates are sigmoid activations that enable smooth, monotone degradation.
+\end{itemize}
+
+\section{Simplified transformer}
+The simplified model uses:
+\begin{itemize}
+  \item Tokenization of the load sequence with positional embeddings.
+  \item Slot-attention to extract stiffness matrices.
+  \item A transformer encoder block to capture temporal dependencies.
+  \item A linear head to map embeddings to the predicted $f_0^{\mathrm{OWT}}(t)$.
+\end{itemize}
+
+\section{Physics consistency (simple)}
+We enforce a basic physics consistency by comparing the predicted $f_0^{\mathrm{OWT}}$ to a proxy
+frequency computed from the stiffness trace:
+\begin{equation}
+  f_0(t) \propto \sqrt{\mathrm{trace}(H_{ij}(t))}
+\end{equation}
+This keeps the prediction aligned with stiffness degradation trends.
+
+\section{Code map}
+The simplified implementation is provided in:
+\begin{itemize}
+  \item \texttt{meeting 3.2.1/simple\_slot\_transformer\_demo.py}
+\end{itemize}
+Key elements:
+\begin{itemize}
+  \item \textbf{SlotAttention}: cross-attention + GRU updates, yielding 21 slots.
+  \item \textbf{SimpleSlotTransformer}: builds $H_{ij}(t)$ and predicts $f_0^{\mathrm{OWT}}(t)$.
+  \item \textbf{demo()}: runs a forward pass and prints output shapes.
+\end{itemize}
+
+\section{How to run}
+\begin{verbatim}
+C:\Users\youss\Downloads\PFE\.venv\Scripts\python.exe "meeting 3.2.1\simple_slot_transformer_demo.py"
+\end{verbatim}
+Expected output:
+\begin{verbatim}
+ok torch.Size([8, 50]) torch.Size([8, 50])
+\end{verbatim}
+
+\section{Limitations}
+This is a simplified, data-free version. It preserves the 21-slot requirement and the
+core transformer flow, but does not include full experimental datasets or complete
+validation protocols.
+
+\end{document}

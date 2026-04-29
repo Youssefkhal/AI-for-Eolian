@@ -1,0 +1,153 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\geometry{margin=2.2cm}
+
+\title{M9 SwiGLU $\Psi$-NN: Curve-Based Error Analysis\\and Worst-Scenario Diagnosis}
+\author{Automated Analysis Report}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Model Overview}
+The M9 SwiGLU $\Psi$-NN predicts lateral pile stiffness degradation curves over 204 test scenarios with
+\textbf{45,502 parameters} (19.7\% fewer than the M6 teacher's 56,646).
+
+\section{Global Curve-Based Performance}
+\begin{table}[h]
+\centering
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Variable} & \textbf{MAPE (mean)} & \textbf{MAPE (median)} & \textbf{MAPE (p95)} & \textbf{$R^2$ (mean)} & \textbf{$R^2$ (min)} \\
+\midrule
+    KL & 2.32\% & 1.33\% & 5.92\% & 0.9840 & 0.1135 \\
+    KR & 2.42\% & 1.42\% & 7.11\% & 0.9821 & 0.1203 \\
+    KLR & 2.38\% & 1.36\% & 6.35\% & 0.9826 & 0.1123 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Overall mean MAPE = 2.37\%, mean $R^2$ = 0.9829.
+
+\section{Worst-Performing Scenarios}
+\begin{table}[h]
+\centering
+\begin{tabular}{ccccc}
+\toprule
+\textbf{Rank} & \textbf{Scenario} & \textbf{Avg MAPE} & \textbf{Avg NRMSE} & \textbf{Avg $R^2$} \\
+\midrule
+    1 & 56 & 34.35\% & 31.69\% & 0.1195 \\
+    2 & 141 & 25.31\% & 27.01\% & 0.2668 \\
+    3 & 73 & 22.41\% & 17.50\% & 0.7864 \\
+    4 & 84 & 13.26\% & 7.04\% & 0.9668 \\
+    5 & 60 & 13.10\% & 14.62\% & 0.7683 \\
+    6 & 137 & 12.34\% & 15.05\% & 0.7480 \\
+    7 & 87 & 10.35\% & 12.12\% & 0.8353 \\
+    8 & 166 & 7.86\% & 7.70\% & 0.9438 \\
+    9 & 148 & 6.94\% & 5.81\% & 0.9761 \\
+    10 & 140 & 6.41\% & 7.96\% & 0.9292 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Per-Variable Breakdown}
+\begin{table}[h]
+\centering
+\begin{tabular}{clcccc}
+\toprule
+\textbf{Rank (ID)} & \textbf{Var} & \textbf{MAPE} & \textbf{NRMSE} & \textbf{$R^2$} & \textbf{Max Abs Err} \\
+\midrule
+    \multirow{3}{*}{1 (S56)} & KL & 34.58\% & 31.80\% & 0.1135 & $5.29e+08$ \\
+     & KR & 33.85\% & 31.45\% & 0.1326 & $6.92e+10$ \\
+     & KLR & 34.62\% & 31.82\% & 0.1123 & $5.27e+09$ \\
+    \hline
+    \multirow{3}{*}{2 (S141)} & KL & 23.01\% & 24.59\% & 0.3958 & $7.05e+08$ \\
+     & KR & 27.88\% & 29.67\% & 0.1203 & $4.55e+11$ \\
+     & KLR & 25.05\% & 26.77\% & 0.2843 & $1.53e+10$ \\
+    \hline
+    \multirow{3}{*}{3 (S73)} & KL & 22.68\% & 17.77\% & 0.7797 & $2.77e+08$ \\
+     & KR & 22.03\% & 17.09\% & 0.7962 & $1.08e+11$ \\
+     & KLR & 22.53\% & 17.63\% & 0.7832 & $4.80e+09$ \\
+    \hline
+    \multirow{3}{*}{4 (S84)} & KL & 13.39\% & 6.96\% & 0.9677 & $9.41e+07$ \\
+     & KR & 12.05\% & 6.57\% & 0.9712 & $2.10e+10$ \\
+     & KLR & 14.35\% & 7.58\% & 0.9616 & $1.42e+09$ \\
+    \hline
+    \multirow{3}{*}{5 (S60)} & KL & 11.63\% & 12.94\% & 0.8201 & $4.21e+08$ \\
+     & KR & 12.80\% & 14.54\% & 0.7729 & $2.02e+11$ \\
+     & KLR & 14.88\% & 16.38\% & 0.7119 & $1.01e+10$ \\
+    \hline
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Worst Scenario Inputs}
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{cccccccccc}
+\toprule
+\textbf{Rank} & \textbf{ID} & \textbf{PI} & \textbf{$G_{\max}$} & \textbf{$\nu$} & \textbf{$D_p$} & \textbf{$T_p$} & \textbf{$L_p$} & \textbf{$I_p$} & \textbf{$D_p/L_p$} \\
+\midrule
+    1 & S56 & 50 & 40000000 & 0.400 & 5.00 & 0.0500 & 20.0 & 2.38e+00 & 0.2500 \\
+    2 & S141 & 101 & 15275782 & 0.314 & 5.00 & 0.0511 & 39.9 & 2.43e+00 & 0.1254 \\
+    3 & S73 & 15 & 20000000 & 0.350 & 5.00 & 0.0550 & 35.0 & 2.61e+00 & 0.1429 \\
+    4 & S84 & 3 & 20711369 & 0.360 & 5.00 & 0.0534 & 28.8 & 2.54e+00 & 0.1736 \\
+    5 & S60 & 160 & 17761853 & 0.326 & 5.00 & 0.0693 & 39.6 & 3.26e+00 & 0.1263 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Diagnosis}
+\begin{table}[h]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Feature} & \textbf{Worst Mean} & \textbf{All Mean} & \textbf{Deviation} \\
+\midrule
+    PI & 99.3458 & 100.3839 & -0.02$\sigma$ \\
+    Gmax & 23970854.2229 & 27900051.7996 & -0.53$\sigma$ \\
+    v & 0.3545 & 0.3514 & +0.10$\sigma$ \\
+    Dp & 5.0000 & 5.0000 & +0.00$\sigma$ \\
+    Tp & 0.0594 & 0.0601 & -0.13$\sigma$ \\
+    Lp & 36.0636 & 30.0226 & +1.07$\sigma$ \\
+    Ip & 2.8110 & 2.8466 & -0.14$\sigma$ \\
+    Dp_Lp & 0.1452 & 0.1729 & -0.81$\sigma$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{enumerate}
+\item \textbf{Lp}: The worst scenarios have a mean value of 36.0636, which is 1.07$\sigma$ higher than the dataset mean (30.0226).
+\item \textbf{Dp_Lp}: The worst scenarios have a mean value of 0.1452, which is 0.81$\sigma$ lower than the dataset mean (0.1729).
+\item \textbf{Gmax}: The worst scenarios have a mean value of 23970854.2229, which is 0.53$\sigma$ lower than the dataset mean (27900051.7996).
+\end{enumerate}
+
+\section{Feature Importance}
+\begin{table}[h]
+\centering
+\begin{tabular}{rccccc}
+\toprule
+\textbf{Influence} & \textbf{Feature} & \textbf{GBR Imp.} & \textbf{Perm. Imp.} & \textbf{Corr $\to$ Error} \\
+\midrule
+    28.2\% & Gmax & 26.1\% & 30.2\% & -0.1126 \\
+    22.7\% & PI & 18.4\% & 27.1\% & -0.1275 \\
+    19.8\% & Dp_Lp & 20.4\% & 19.2\% & -0.0767 \\
+    12.9\% & Lp & 14.0\% & 11.7\% & +0.1341 \\
+    8.3\% & Tp & 11.4\% & 5.1\% & -0.0958 \\
+    5.3\% & v & 6.1\% & 4.5\% & +0.0446 \\
+    2.9\% & Ip & 3.7\% & 2.2\% & -0.0965 \\
+    0.0\% & Dp & 0.0\% & 0.0\% & +nan \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}

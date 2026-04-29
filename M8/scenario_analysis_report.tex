@@ -1,0 +1,274 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{geometry}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\geometry{margin=2.2cm}
+
+\definecolor{bestgreen}{RGB}{0,128,0}
+\definecolor{worstred}{RGB}{180,30,30}
+
+\title{M8 Efficient $\Psi$-NN: Curve-Based Error Analysis\\and Worst-Scenario Diagnosis}
+\author{Automated Analysis Report}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+%% ═══════════════════════════════════════════════════
+\section{Model Overview}
+%% ═══════════════════════════════════════════════════
+
+The M8 Efficient $\Psi$-NN model predicts lateral pile stiffness degradation
+curves (KL, KR, KLR) over 204 test scenarios with
+\textbf{45,486 parameters} (19.7\% fewer than the M6 teacher's 56,646).
+Three key upgrades were applied over M7:
+\begin{enumerate}[nosep]
+    \item \textbf{EfficientSlotMLP}: bottleneck $64 \to 48 \to 64$ (vs.\ wide $64 \to 128 \to 64$)
+    \item \textbf{Learnable relation matrix}: row-softmax logits optimised end-to-end
+    \item \textbf{Physics-monotonic penalty}: enforces KL/KR $\downarrow$ and KLR $\uparrow$
+\end{enumerate}
+
+\paragraph{Error methodology.}
+Unlike slot-by-slot drop metrics, we evaluate \emph{cumulative stiffness curves}
+as they represent the physical quantity of interest.  For each scenario $i$ and
+variable $v \in \{\text{KL},\text{KR},\text{KLR}\}$, we compare the predicted
+curve $\hat{y}^{(i,v)}_{1:T}$ against the target $y^{(i,v)}_{1:T}$ using:
+\begin{itemize}[nosep]
+    \item \textbf{Curve MAPE} $= \frac{1}{T}\sum_{t=1}^{T} \frac{|\hat{y}_t - y_t|}{|y_t|} \times 100\%$
+    \item \textbf{Curve NRMSE} $= \frac{\text{RMSE}}{\max(y) - \min(y)} \times 100\%$
+    \item \textbf{Curve $R^2$} per individual scenario curve
+    \item \textbf{Area Between Curves (ABC)} $= \int |\hat{y}(t) - y(t)|\,dt$
+\end{itemize}
+
+%% ═══════════════════════════════════════════════════
+\section{Global Curve-Based Performance}
+%% ═══════════════════════════════════════════════════
+
+\begin{table}[h]
+\centering
+\caption{Global curve-based metrics across all 204 test scenarios.}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Variable} & \textbf{MAPE (mean)} & \textbf{MAPE (median)} &
+\textbf{MAPE (p95)} & \textbf{$R^2$ (mean)} & \textbf{$R^2$ (min)} \\
+\midrule
+    KL & 2.38\% & 1.43\% & 5.57\% & 0.9830 & -0.2109 \\
+    KR & 2.59\% & 1.68\% & 5.01\% & 0.9791 & -0.7193 \\
+    KLR & 2.46\% & 1.48\% & 5.34\% & 0.9818 & -0.2676 \\
+\bottomrule
+\end{tabular}
+\label{tab:global_curve}
+\end{table}
+
+\noindent Overall across all variables:
+\textbf{Mean MAPE = 2.48\%},
+\textbf{Median MAPE = 1.54\%},
+\textbf{Mean $R^2$ = 0.9813}.
+
+%% ═══════════════════════════════════════════════════
+\section{Worst-Performing Scenarios}
+%% ═══════════════════════════════════════════════════
+
+Table~\ref{tab:worst10} lists the 10 scenarios with the highest average
+curve MAPE, sorted from worst to least-worst.
+
+\begin{table}[h]
+\centering
+\caption{Top-10 worst scenarios ranked by average curve MAPE.}
+\begin{tabular}{cccccc}
+\toprule
+\textbf{Rank} & \textbf{Scenario} & \textbf{Avg MAPE} &
+\textbf{Avg NRMSE} & \textbf{Avg $R^2$} \\
+\midrule
+    1 & 56 & 38.07\% & 35.43\% & -0.1019 \\
+    2 & 141 & 33.30\% & 35.59\% & -0.2888 \\
+    3 & 84 & 20.51\% & 13.36\% & 0.8805 \\
+    4 & 73 & 16.72\% & 13.25\% & 0.8774 \\
+    5 & 148 & 13.59\% & 7.48\% & 0.9600 \\
+    6 & 166 & 9.98\% & 9.44\% & 0.9158 \\
+    7 & 133 & 8.96\% & 9.57\% & 0.9068 \\
+    8 & 194 & 6.90\% & 4.20\% & 0.9878 \\
+    9 & 18 & 6.80\% & 7.84\% & 0.9384 \\
+    10 & 112 & 5.92\% & 6.50\% & 0.9567 \\
+\bottomrule
+\end{tabular}
+\label{tab:worst10}
+\end{table}
+
+\subsection{Per-Variable Breakdown (Top 5 Worst)}
+
+\begin{table}[h]
+\centering
+\caption{Per-variable curve errors for the 5 worst scenarios.}
+\begin{tabular}{clcccc}
+\toprule
+\textbf{Rank (ID)} & \textbf{Var} & \textbf{MAPE} & \textbf{NRMSE} &
+\textbf{$R^2$} & \textbf{Max Abs Err} \\
+\midrule
+    \multirow{3}{*}{1 (S56)} & KL & 39.95\% & 37.16\% & -0.2109 & $6.02e+08$ \\
+     & KR & 37.18\% & 34.66\% & -0.0532 & $7.53e+10$ \\
+     & KLR & 37.07\% & 34.47\% & -0.0416 & $5.63e+09$ \\
+    \hline
+    \multirow{3}{*}{2 (S141)} & KL & 27.77\% & 29.67\% & 0.1205 & $8.54e+08$ \\
+     & KR & 38.82\% & 41.48\% & -0.7193 & $6.27e+11$ \\
+     & KLR & 33.29\% & 35.62\% & -0.2676 & $2.05e+10$ \\
+    \hline
+    \multirow{3}{*}{3 (S84)} & KL & 21.65\% & 14.15\% & 0.8663 & $1.32e+08$ \\
+     & KR & 19.02\% & 12.32\% & 0.8986 & $3.21e+10$ \\
+     & KLR & 20.87\% & 13.59\% & 0.8766 & $1.82e+09$ \\
+    \hline
+    \multirow{3}{*}{4 (S73)} & KL & 16.05\% & 12.73\% & 0.8869 & $1.93e+08$ \\
+     & KR & 17.25\% & 13.70\% & 0.8691 & $8.47e+10$ \\
+     & KLR & 16.86\% & 13.32\% & 0.8762 & $3.53e+09$ \\
+    \hline
+    \multirow{3}{*}{5 (S148)} & KL & 12.39\% & 6.54\% & 0.9697 & $2.69e+08$ \\
+     & KR & 14.89\% & 8.48\% & 0.9491 & $1.63e+11$ \\
+     & KLR & 13.49\% & 7.41\% & 0.9612 & $5.70e+09$ \\
+    \hline
+\bottomrule
+\end{tabular}
+\label{tab:worst5_detail}
+\end{table}
+
+\subsection{Input Parameters of Worst Scenarios}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Input parameters of the 5 worst-performing scenarios.}
+\begin{tabular}{cccccccccc}
+\toprule
+\textbf{Rank} & \textbf{ID} & \textbf{PI} & \textbf{$G_{\max}$} &
+\textbf{$\nu$} & \textbf{$D_p$} & \textbf{$T_p$} & \textbf{$L_p$} &
+\textbf{$I_p$} & \textbf{$D_p/L_p$} \\
+\midrule
+    1 & S56 & 50 & 40000000 & 0.400 & 5.00 & 0.0500 & 20.0 & 2.38e+00 & 0.2500 \\
+    2 & S141 & 101 & 15275782 & 0.314 & 5.00 & 0.0511 & 39.9 & 2.43e+00 & 0.1254 \\
+    3 & S84 & 3 & 20711369 & 0.360 & 5.00 & 0.0534 & 28.8 & 2.54e+00 & 0.1736 \\
+    4 & S73 & 15 & 20000000 & 0.350 & 5.00 & 0.0550 & 35.0 & 2.61e+00 & 0.1429 \\
+    5 & S148 & 17 & 18037534 & 0.379 & 5.00 & 0.0694 & 39.0 & 3.27e+00 & 0.1284 \\
+\bottomrule
+\end{tabular}
+\label{tab:worst_params}
+\end{table}
+
+%% ═══════════════════════════════════════════════════
+\section{Diagnosis: Why Do These Scenarios Fail?}
+\label{sec:diagnosis}
+%% ═══════════════════════════════════════════════════
+
+We compare the input feature distributions of the 10~worst scenarios against
+the full test set to identify \emph{which physical parameters} push the model
+outside its comfort zone.
+
+\begin{table}[h]
+\centering
+\caption{Feature comparison: worst-10 mean vs.\ dataset mean.
+$\sigma$-deviation measures how many standard deviations the worst-case
+mean lies from the population mean.}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Feature} & \textbf{Worst Mean} & \textbf{All Mean} & \textbf{Deviation} \\
+\midrule
+    PI & 60.0862 & 100.3839 & -0.69$\sigma$ \\
+    Gmax & 24492823.5374 & 27900051.7996 & -0.46$\sigma$ \\
+    v & 0.3609 & 0.3514 & +0.32$\sigma$ \\
+    Dp & 5.0000 & 5.0000 & +0.00$\sigma$ \\
+    Tp & 0.0600 & 0.0601 & -0.02$\sigma$ \\
+    Lp & 32.8934 & 30.0226 & +0.51$\sigma$ \\
+    Ip & 2.8409 & 2.8466 & -0.02$\sigma$ \\
+    Dp_Lp & 0.1590 & 0.1729 & -0.40$\sigma$ \\
+\bottomrule
+\end{tabular}
+\label{tab:diagnosis}
+\end{table}
+
+\subsection{Root-Cause Analysis}
+
+The worst-performing scenarios share several distinguishing characteristics:
+
+\begin{enumerate}
+\item \textbf{PI}: The worst scenarios have a mean value of 60.0862, which is 0.69$\sigma$ lower than the dataset mean (100.3839). The plasticity index affects clay behaviour under cyclic loading. Extreme PI values produce highly nonlinear degradation curves that are harder to approximate with 204 prototypes.
+\item \textbf{Lp}: The worst scenarios have a mean value of 32.8934, which is 0.51$\sigma$ higher than the dataset mean (30.0226). This geometric parameter governs the pile's slenderness and load transfer mechanism. Extreme ratios lead to non-standard degradation profiles that deviate from the cluster prototypes learned in Stage~B.
+\item \textbf{Gmax}: The worst scenarios have a mean value of 24492823.5374, which is 0.46$\sigma$ lower than the dataset mean (27900051.7996). This parameter directly controls the soil stiffness and wave propagation behaviour, so extreme values create degradation patterns that the model has fewer training examples to learn from.
+
+\end{enumerate}
+
+\paragraph{Degradation curve characteristics.}
+The worst scenarios typically exhibit:
+\begin{itemize}[nosep]
+    \item \textbf{Larger dynamic range}: the stiffness values span a wider
+          interval, making relative errors more sensitive to small absolute
+          offsets in the tail of the curve.
+    \item \textbf{Non-standard degradation rates}: either unusually rapid
+          or very slow degradation compared to the training distribution,
+          which the 5~prototypes cannot fully capture.
+    \item \textbf{Extreme parameter combinations}: multiple input features
+          simultaneously at the tails of their distributions compound the
+          extrapolation difficulty.
+\end{itemize}
+
+%% ═══════════════════════════════════════════════════
+\section{Feature Importance (\% Influence on Prediction Error)}
+\label{sec:importance}
+%% ═══════════════════════════════════════════════════
+
+To quantify how much each input parameter influences the prediction error, we
+train a Gradient Boosting Regressor (GBR) that maps the 8~input features to
+per-scenario average curve MAPE.  We report both the GBR's built-in impurity-based
+importance and permutation importance (averaged over 30 repeats), then combine
+them into a single ranking.
+
+\begin{table}[h]
+\centering
+\caption{Feature importance ranking. \emph{Combined \%} is the average of
+GBR and permutation importance, re-normalised to 100\%.}
+\begin{tabular}{rccccc}
+\toprule
+\textbf{Influence} & \textbf{Feature} & \textbf{GBR Imp.} &
+\textbf{Perm. Imp.} & \textbf{Corr $\to$ Error} \\
+\midrule
+    24.4\% & Gmax & 22.8\% & 26.0\% & -0.0961 \\
+    23.4\% & PI & 16.2\% & 30.6\% & -0.1618 \\
+    18.0\% & Dp_Lp & 19.9\% & 16.1\% & -0.0233 \\
+    10.9\% & Lp & 11.7\% & 10.2\% & +0.0706 \\
+    10.1\% & v & 11.1\% & 9.1\% & +0.0639 \\
+    8.7\% & Ip & 12.0\% & 5.4\% & -0.0882 \\
+    4.5\% & Tp & 6.3\% & 2.6\% & -0.0874 \\
+    0.0\% & Dp & 0.0\% & 0.0\% & +nan \\
+\bottomrule
+\end{tabular}
+\label{tab:importance}
+\end{table}
+
+\subsection{Interpretation}
+
+\paragraph{1. Gmax (24.4\%).}
+The maximum shear modulus $G_{\max}$ is the dominant driver of prediction difficulty. Higher $G_{\max}$ values correspond to stiffer soils where the stiffness degradation curves have larger absolute magnitudes, amplifying absolute errors.  The model's slot prototypes were learned from the full distribution; scenarios at the extremes of $G_{\max}$ require extrapolation.
+
+\paragraph{2. PI (23.4\%).}
+The Plasticity Index directly controls the clay's cyclic softening behaviour. High-PI clays degrade faster and more nonlinearly, creating steep curves that the model's monotonic constraints must balance against fitting accuracy.
+
+\paragraph{3. Dp_Lp (18.0\%).}
+The slenderness ratio $D_p/L_p$ is a key dimensionless parameter in pile design.  Very slender piles ($D_p/L_p \ll 1$) behave fundamentally differently from short stiff piles, and the transition zone is where the model struggles most.
+
+
+%% ═══════════════════════════════════════════════════
+\section{Conclusion}
+%% ═══════════════════════════════════════════════════
+
+The M8 Efficient $\Psi$-NN achieves strong curve-level performance with a
+\textbf{mean MAPE of 2.48\%} and
+\textbf{mean curve $R^2$ of 0.9813} across
+204 test scenarios, using only \textbf{45,486 parameters}
+(19.7\% compression vs.\ teacher).  The worst-performing scenarios are
+consistently characterised by extreme input parameter combinations that lie
+at the tails of the training distribution.
+
+\end{document}

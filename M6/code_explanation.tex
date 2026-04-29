@@ -1,0 +1,392 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,calc,fit}
+\usepackage{float}
+\usepackage{tabularx}
+
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\scriptsize,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{green!50!black},
+    stringstyle=\color{red!70!black},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!5},
+    showstringspaces=false
+}
+
+\definecolor{inputcol}{RGB}{52,152,219}
+\definecolor{embedcol}{RGB}{155,89,182}
+\definecolor{slotcol}{RGB}{46,204,113}
+\definecolor{crosscol}{RGB}{26,188,156}
+\definecolor{lstmcol}{RGB}{241,196,15}
+\definecolor{outputcol}{RGB}{231,76,60}
+\definecolor{physcol}{RGB}{230,126,34}
+
+\title{\textbf{M6 --- Pile Stiffness Degradation Prediction}\\[0.3cm]
+\large Slot-Attention Transformer with Per-Slot MLP (LSTM-Free)\\
+Architecture, Physics Constraints \& Differences from M5}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+% ============================================================
+\section{Project Overview}
+% ============================================================
+
+M6 predicts pile--soil stiffness degradation over 21 time steps. Given 8 input features (PI, $G_{\max}$, $\nu$, $D_p$, $T_p$, $L_p$, $I_p$, $D_p/L_p$), the model outputs trajectories for three stiffness quantities: $K_L$ (lateral), $K_R$ (rotational), $K_{LR}$ (cross-coupling).
+
+M6 is a \textbf{simplified and more constrained} evolution of M5. The key idea: remove the LSTM decoder, add stronger physics constraints, and let self-attention alone handle temporal dependencies.
+
+% ============================================================
+\section{Architecture Summary}
+% ============================================================
+
+\begin{center}
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    >{Stealth[length=2.5mm]},
+    block/.style={rectangle, rounded corners=6pt, minimum width=3.2cm, minimum height=1cm, align=center, font=\footnotesize\bfseries, draw, line width=1pt},
+    smallblock/.style={rectangle, rounded corners=4pt, minimum width=2.8cm, minimum height=0.75cm, align=center, font=\scriptsize, draw, line width=0.8pt},
+    tinyblock/.style={rectangle, rounded corners=3pt, minimum width=2.1cm, minimum height=0.55cm, align=center, font=\tiny, draw, line width=0.6pt},
+    arrow/.style={->, thick, gray!70, line width=1pt},
+    dashedarrow/.style={->, dashed, gray!60, line width=0.8pt},
+    note/.style={font=\tiny\itshape, align=center, text width=2.6cm},
+    dimlab/.style={font=\tiny\ttfamily, text=gray!70},
+    looplab/.style={font=\tiny\bfseries, text=violet!70!black},
+]
+
+% === INPUT ===
+\node[block, fill=inputcol!20, draw=inputcol] (inp) at (0,0)
+    {INPUT\\[-1pt]{\scriptsize 8 features}};
+\node[note, below=2pt of inp] {PI, $G_{max}$, $\nu$, $D_p$\\$T_p$, $L_p$, $I_p$, $D_p/L_p$};
+\node[dimlab, above=1pt of inp] {$[B, 8]$};
+
+% === EMBEDDING ===
+\node[block, fill=embedcol!20, draw=embedcol, minimum width=3.5cm] (emb) at (5.5,0)
+    {EMBEDDING};
+\node[tinyblock, fill=white, draw=embedcol!70] (emb1) at (5.5, 0.55) {\texttt{Linear}$(8 \to 64)$};
+\node[tinyblock, fill=white, draw=embedcol!70] (emb2) at (5.5, 0) {\texttt{LayerNorm}$(64)$};
+\node[tinyblock, fill=white, draw=embedcol!70] (emb3) at (5.5, -0.55) {\texttt{GELU}};
+\node[dimlab, above=1pt of emb1] {$[B, 1, 64]$};
+
+% === LEARNABLE SLOTS ===
+\node[block, fill=slotcol!15, draw=slotcol, minimum width=3.8cm] (slotinit) at (11,0)
+    {21 LEARNABLE SLOTS\\[-1pt]{\scriptsize Slot 1 + Slots 2--21}};
+\node[dimlab, above=1pt of slotinit] {$[B, 21, 64]$};
+
+\draw[arrow] (inp) -- (emb);
+\draw[arrow] (emb) -- (slotinit);
+
+% === REFINEMENT BOX ===
+\node[block, fill=slotcol!8, draw=slotcol!80, minimum width=14cm, minimum height=3.5cm]
+    (refine_box) at (5.5, -3.5) {};
+\node[above=0pt of refine_box.north, font=\footnotesize\bfseries, slotcol!80!black]
+    {ITERATIVE SLOT REFINEMENT};
+\node[looplab, above right=-2pt and 2pt of refine_box.north west]
+    {$\times 3$ iterations};
+
+\node[smallblock, fill=crosscol!15, draw=crosscol] (crossattn) at (0.5, -3)
+    {Cross-Attention\\[-1pt]{\tiny Q=slots, K=V=input}};
+\node[tinyblock, fill=white, draw=crosscol!60] (crossnorm) at (0.5, -4)
+    {Add \& LayerNorm};
+
+\node[smallblock, fill=slotcol!15, draw=slotcol] (selfattn) at (5.5, -3)
+    {Self-Attention\\[-1pt]{\tiny Q=K=V=slots}};
+\node[tinyblock, fill=white, draw=slotcol!60] (selfnorm) at (5.5, -4)
+    {Add \& LayerNorm};
+
+\node[smallblock, fill=embedcol!10, draw=embedcol!70, minimum width=3.2cm] (mlp) at (10.5, -3)
+    {Slot MLP\\[-1pt]{\tiny $64 \to 128 \to 64$}};
+\node[tinyblock, fill=white, draw=embedcol!60] (mlpnorm) at (10.5, -4)
+    {Add \& LayerNorm};
+
+\draw[arrow] (crossattn) -- (crossnorm);
+\draw[arrow] (crossnorm) -- ++(0,-0.4) -| ($(selfattn.south west)-(0.3,0)$) |- (selfattn.west);
+\draw[arrow] (selfattn) -- (selfnorm);
+\draw[arrow] (selfnorm) -- ++(0,-0.4) -| ($(mlp.south west)-(0.3,0)$) |- (mlp.west);
+\draw[arrow] (mlp) -- (mlpnorm);
+
+\draw[arrow] (slotinit) -- ++(0,-1.2) -| (crossattn.north);
+\draw[dashedarrow] (emb.south) -- ++(0,-1.5) -| ($(crossattn.north west)+(0.3,0.4)$);
+
+% === REFINED SLOTS ===
+\node[block, fill=slotcol!15, draw=slotcol, minimum width=3cm] (refined) at (5.5, -6.5)
+    {Refined Slots\\[-1pt]{\scriptsize $[B, 21, 64]$}};
+\draw[arrow] (mlpnorm.south) -- ++(0,-0.5) -| (refined.north);
+
+% === SLOT SPLIT ===
+\node[smallblock, fill=outputcol!12, draw=outputcol, minimum width=3.5cm] (slot1) at (1.5, -8.5)
+    {Slot 1\\[-1pt]{\tiny initial state}};
+\node[smallblock, fill=inputcol!12, draw=inputcol, minimum width=3.5cm] (slots220) at (9.5, -8.5)
+    {Slots 2--21\\[-1pt]{\tiny degradation slots}};
+
+\draw[arrow] (refined.south) -- ++(0,-0.5) -| (slot1.north);
+\draw[arrow] (refined.south) -- ++(0,-0.5) -| (slots220.north);
+
+% === PER-SLOT MLPs ===
+\node[smallblock, fill=outputcol!15, draw=outputcol, minimum width=3.5cm] (inithead) at (1.5, -10.2)
+    {Initial MLP\\[-1pt]{\tiny $64 \to 32 \to 3$}};
+\node[dimlab, right=2pt of inithead] {$[B,1,3]$};
+
+\node[smallblock, fill=lstmcol!15, draw=lstmcol, minimum width=3.5cm] (drophead) at (9.5, -10.2)
+    {Drop MLP (shared)\\[-1pt]{\tiny $64 \to 32 \to 3$}};
+\node[dimlab, right=2pt of drophead] {$[B,20,3]$};
+
+\draw[arrow] (slot1) -- (inithead);
+\draw[arrow] (slots220) -- (drophead);
+
+% === PHYSICS CONSTRAINT ===
+\node[block, fill=physcol!25, draw=physcol, minimum width=6cm] (physics) at (9.5, -12)
+    {Physics Constraint\\[-1pt]{\scriptsize $\Delta K_L, \Delta K_R \leq 0$; $\Delta K_{LR} \geq 0$}};
+
+\draw[arrow] (drophead) -- (physics);
+
+% === CUMULATIVE SUM + CONCAT ===
+\node[block, fill=gray!15, draw=gray!60, minimum width=6.5cm] (cumsum) at (5.5, -14)
+    {Cumulative Sum + Concat\\[-1pt]{\scriptsize $K(t) = K^0 + \sum_{n=1}^{t-1}\Delta_n$}};
+
+\draw[arrow] (physics.south) -- ++(0,-0.5) -| (cumsum.east);
+\draw[arrow] (inithead.south) -- ++(0,-2.3) -| (cumsum.west);
+
+% === OUTPUT ===
+\node[block, fill=outputcol!25, draw=outputcol, minimum width=6.5cm, minimum height=1.2cm] (output) at (5.5, -16)
+    {OUTPUT\\[-1pt]{\scriptsize $K_L(t), K_R(t), K_{LR}(t)$ for $t=1\ldots21$}};
+\node[dimlab, above=1pt of output] {$[B, 21, 3]$};
+
+\draw[arrow] (cumsum) -- (output);
+
+\end{tikzpicture}
+}%
+\end{center}
+
+% ============================================================
+\section{Key Differences: M6 vs.\ M5}
+% ============================================================
+
+M6 removes the LSTM decoder that M5 used, replaces it with direct per-slot MLP prediction, and adds a stronger physics constraint on $K_{LR}$.
+
+\subsection{Architectural Changes}
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}lXX@{}}
+\toprule
+\textbf{Component} & \textbf{M5} & \textbf{M6} \\
+\midrule
+Drop decoder & 2-layer LSTM + decoder cross-attention + positional embeddings & Direct per-slot shared MLP (no LSTM) \\
+$K_{LR}$ drop constraint & \textbf{None} --- raw output passed directly & $\Delta K_{LR} = +|\hat{d}_3| \geq 0$ (forced positive) \\
+Slot refinement iterations & 2 & 3 (compensates for LSTM removal) \\
+Extra modules & \texttt{seq\_decoder}, \texttt{decoder\_cross\_attn}, \texttt{h0\_proj}, \texttt{c0\_proj}, \texttt{pos\_embed} & All removed \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\textbf{Why remove the LSTM?} In M5, the LSTM decoder received an aggregated slot vector and sequentially generated drops. In M6, each slot directly predicts its own drop through the shared MLP. The slot's temporal identity comes from its unique learnable initialization and the self-attention context (3 iterations instead of 2), not from sequential decoding. This makes M6 simpler and fully parallelizable at inference.
+
+\textbf{Why add the $K_{LR}$ constraint?} In M5, $K_{LR}$ drops were unconstrained --- the model had to learn the correct sign from data alone. M6 hard-codes $\Delta K_{LR} = +|\hat{d}_3| \geq 0$, exploiting the physics that $K_{LR} < 0$ always increases toward zero under cyclic loading. This guarantees monotonic $K_{LR}$ trajectories structurally.
+
+\subsection{Training Hyperparameter Changes}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule
+\textbf{Parameter} & \textbf{M5} & \textbf{M6} \\
+\midrule
+Initial loss weight & $\times 3$ & $\times 5$ \\
+Weight decay & 0.01 & 0.005 \\
+Scheduler patience & 100 epochs & 80 epochs \\
+Early stopping patience & 300 epochs & 200 epochs \\
+Gradient clipping & 1.0 & 2.0 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+M6 penalizes initial-step error more heavily ($5\times$ vs $3\times$) because without the LSTM's sequential structure, the initial value is even more critical as the sole baseline for the cumulative sum.
+
+\subsection{Efficiency Gains}
+
+By removing the LSTM decoder and its associated modules (\texttt{seq\_decoder}, \texttt{decoder\_cross\_attn}, \texttt{h0\_proj}, \texttt{c0\_proj}, \texttt{pos\_embed}), M6 achieves significant efficiency improvements:
+
+\begin{center}
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Metric} & \textbf{M5} & \textbf{M6} & \textbf{Gain} \\
+\midrule
+Parameters & 157{,}958 & 56{,}646 & $\mathbf{64.1\%}$ fewer \\
+Model file size & 632.7\,KB & 231.2\,KB & $\mathbf{63.5\%}$ smaller \\
+Inference time (batch=32, CPU) & 11.38\,ms & 9.07\,ms & $\mathbf{1.25\times}$ faster \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+M6 removes 101{,}312 parameters --- almost entirely from the LSTM decoder (66{,}176 params), its decoder cross-attention (16{,}640 params), and the hidden-state projections (16{,}640 params). The remaining architecture is identical. The 3 refinement iterations (vs.\ 2) reuse the same layers, so they add \textbf{zero parameters} --- only extra compute.
+
+\subsection{Accuracy vs.\ Efficiency Trade-off}
+
+\begin{center}
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Target} & \textbf{Metric} & \textbf{M5} & \textbf{M6} \\
+\midrule
+Overall & $R^2$ & 0.9913 & 0.9804 \\
+Overall & RMSE & $1.98\times 10^{10}$ & $2.98\times 10^{10}$ \\
+Overall & MAE & $2.98\times 10^{9}$ & $3.33\times 10^{9}$ \\
+\midrule
+$K_L$ & $R^2$ & 0.9907 & 0.9768 \\
+$K_L$ & RMSE & $6.21\times 10^{7}$ & $9.79\times 10^{7}$ \\
+$K_L$ & MAE & $2.11\times 10^{7}$ & $2.25\times 10^{7}$ \\
+\midrule
+$K_R$ & $R^2$ & 0.9838 & 0.9634 \\
+$K_R$ & RMSE & $3.42\times 10^{10}$ & $5.15\times 10^{10}$ \\
+$K_R$ & MAE & $8.56\times 10^{9}$ & $9.57\times 10^{9}$ \\
+\midrule
+$K_{LR}$ & $R^2$ & 0.9882 & 0.9690 \\
+$K_{LR}$ & RMSE & $1.18\times 10^{9}$ & $1.92\times 10^{9}$ \\
+$K_{LR}$ & MAE & $3.50\times 10^{8}$ & $3.88\times 10^{8}$ \\
+\midrule
+Slot 1 $\to$ 21 & $R^2$ trend & 0.9908 $\to$ 0.9968 & 0.9811 $\to$ 0.9809 \\
+Slot 1 $\to$ 21 & RMSE trend & $2.40\times 10^{10}$ $\to$ $2.69\times 10^{9}$ & $3.45\times 10^{10}$ $\to$ $6.57\times 10^{9}$ \\
+Slot 1 $\to$ 21 & MAE trend & $3.79\times 10^{9}$ $\to$ $5.90\times 10^{8}$ & $3.93\times 10^{9}$ $\to$ $8.94\times 10^{8}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Across \textbf{all error metrics}, M5 is more accurate than M6: it has higher $R^2$ and lower RMSE/MAE overall and for each output variable. The largest error gap appears on $K_R$, where M6's RMSE increases from $3.42\times 10^{10}$ to $5.15\times 10^{10}$. The per-slot trend explains the difference: M5's LSTM decoder accumulates sequential context, so later slots become more accurate, while M6 stays almost flat across the trajectory. M6 therefore trades some predictive accuracy for 64\% fewer parameters, 63\% smaller model files, and stronger hard-coded physics constraints.
+
+% ============================================================
+\section{Hard-Coded Physics Constraints}
+% ============================================================
+
+These constraints are enforced structurally in the code --- the model \textbf{cannot} violate them regardless of learned weights.
+
+\subsection{Constraint 1: Sign Enforcement on All Three Drops}
+
+\begin{lstlisting}
+drops_kl_kr = -torch.abs(raw_drops[:, :, :2])   # KL, KR: always <= 0
+drops_klr   =  torch.abs(raw_drops[:, :, 2:3])  # KLR: always >= 0
+\end{lstlisting}
+
+\begin{itemize}[nosep]
+    \item $\Delta K_L = -|\hat{d}_1| \leq 0$: lateral stiffness degrades
+    \item $\Delta K_R = -|\hat{d}_2| \leq 0$: rotational stiffness degrades
+    \item $\Delta K_{LR} = +|\hat{d}_3| \geq 0$: cross-coupling ($K_{LR} < 0$) increases toward zero
+\end{itemize}
+
+\textbf{Note:} M5 only constrained $K_L$ and $K_R$. The $K_{LR}$ constraint is \textbf{new in M6}.
+
+\subsection{Constraint 2: Monotonic Trajectories via Cumulative Sum}
+
+\begin{lstlisting}
+cumulative_drops = torch.cumsum(drops, dim=1)
+stiffness_after_drops = initial_decoded + cumulative_drops
+\end{lstlisting}
+
+Combined with Constraint~1, this \textbf{structurally guarantees}:
+\begin{align}
+    K_L(t) &\leq K_L(t-1), \quad K_R(t) \leq K_R(t-1), \quad K_{LR}(t) \geq K_{LR}(t-1) \quad \forall\, t
+\end{align}
+
+\subsection{Constraint 3: Initial/Drop Decomposition}
+
+Slot~1 $\to$ \texttt{initial\_proj} predicts $K^0$. Slots~2--21 $\to$ \texttt{drop\_proj} predict incremental changes. This separation is hard-coded, reflecting the physical distinction between the initial state and the degradation process.
+
+\subsection{Constraint 4: Signed Log Scaling}
+
+$y_{\log} = \operatorname{sign}(y) \cdot \log(1 + |y|)$ preserves the fact that $K_{LR} < 0$ while $K_L, K_R > 0$. A standard log transform would fail on negative values.
+
+\subsection{Summary Table}
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}clXc@{}}
+\toprule
+\textbf{\#} & \textbf{Constraint} & \textbf{Implementation} & \textbf{Type} \\
+\midrule
+1 & Sign enforcement & \texttt{-abs()} for $K_L, K_R$; \texttt{+abs()} for $K_{LR}$ & Architectural \\
+2 & Monotonic curves & \texttt{cumsum()} on sign-constrained drops & Architectural \\
+3 & Initial/drop split & Slot~1 vs.\ Slots~2--21, separate MLPs & Architectural \\
+4 & Signed log scaling & $\text{sign}(y) \cdot \log(1+|y|)$ & Preprocessing \\
+5 & Weighted initial loss & MSE on step~1 $\times$ 5.0 & Training \\
+6 & Shape loss & Huber on first differences & Training \\
+7 & Additive drop model & $K(t) = K^0 - \sum\text{drops}$ & Data \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% ============================================================
+\section{Error Metrics}
+% ============================================================
+
+\subsection{Definitions}
+
+All metrics are computed on the \textbf{original physical scale} (after inverse-transforming predictions). Three standard metrics are used:
+
+\begin{align}
+    R^2 &= 1 - \frac{\sum(y_i - \hat{y}_i)^2}{\sum(y_i - \bar{y})^2} \qquad \text{(1.0 = perfect)} \\[4pt]
+    \text{RMSE} &= \sqrt{\frac{1}{n}\sum(y_i - \hat{y}_i)^2} \qquad \text{(same units as $y$)} \\[4pt]
+    \text{MAE} &= \frac{1}{n}\sum|y_i - \hat{y}_i| \qquad \text{(robust to outliers)}
+\end{align}
+
+\subsection{Granularity Levels}
+
+Metrics are computed at four levels, each answering a different question:
+
+\begin{center}
+\small
+\begin{tabular}{@{}llp{6.5cm}@{}}
+\toprule
+\textbf{Level} & \textbf{Shape} & \textbf{What it reveals} \\
+\midrule
+Overall & $(N, 21, 3) \to (63N,)$ & Global model quality \\
+Per-variable & $(N, 21) \to (21N,)$ & Which of $K_L, K_R, K_{LR}$ is hardest to predict \\
+Per-slot & $(N, 3) \to (3N,)$ & Which degradation step accumulates the most error \\
+Per-scenario & $(21, 3) \to (63,)$ & Which input scenarios are poorly modeled \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{How Per-Slot Metrics Relate to the Architecture}
+
+Each slot in the model corresponds to one degradation step. The per-slot metrics directly evaluate how well each slot performs its job:
+
+\begin{itemize}[nosep]
+    \item \textbf{Slot~1} (initial): Evaluated separately. Errors here propagate to all later steps via the cumulative sum. This is why M6 uses a $5\times$ initial loss weight (vs.\ $3\times$ in M5).
+    \item \textbf{Slots~2--21} (drops): Each slot's prediction quality can be measured individually. Early slots (2--5) tend to have smaller cumulative error; later slots (18--21) may accumulate drift. Comparing per-slot $R^2$ across the 21 steps reveals whether the model degrades gracefully over the trajectory.
+\end{itemize}
+
+The per-slot breakdown is especially useful for comparing M5 vs.\ M6: if M6's later slots maintain higher $R^2$ despite having no LSTM, it confirms that 3 rounds of self-attention are sufficient for temporal coordination.
+
+\subsection{Webapp: Percentage Error per Step}
+
+The webapp additionally displays relative error per step for each scenario:
+
+\begin{equation}
+    \text{Err\%} = \frac{|\hat{y} - y|}{|y|} \times 100
+\end{equation}
+
+Color-coded: \textcolor{green!60!black}{green} ($< 5\%$), \textcolor{orange}{orange} ($5$--$20\%$), \textcolor{red}{red} ($> 20\%$). Returns ``--'' when $|y| < 10^{-10}$.
+
+% ============================================================
+\section{Conclusion}
+% ============================================================
+
+M6 simplifies the M5 architecture by removing the LSTM decoder (along with its cross-attention, hidden state projections, and positional embeddings) and replacing it with direct per-slot MLP prediction. To compensate, slot refinement iterations increase from 2 to 3, and a new physics constraint forces $\Delta K_{LR} \geq 0$. The result is a smaller, fully parallelizable model with stronger physical guarantees --- all three stiffness variables now have hard-coded monotonicity, not just $K_L$ and $K_R$.
+
+\end{document}

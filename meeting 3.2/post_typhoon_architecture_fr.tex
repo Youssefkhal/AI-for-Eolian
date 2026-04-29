@@ -1,0 +1,118 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\title{Post-typhoon OWT -- Synthese des pages 29 a 37}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Objectif et perimetre}
+Ce document explique l architecture technique demandee dans les pages 29 a 37 du PDF
+``PostTyphoon\_OWT\_natural\_frequency\_shift\_prediction''. Il couvre le schema
+experimental, la conception de l IA physique auto-calibrante, l entrainement, la validation
+et l XAI basee sur l attention.
+
+\section{Conception experimentale et acquisition}
+\textbf{But.} Produire un jeu de donnees dense et reproductible liant charges de typhon et
+variations de la frequence propre $f_0^{\mathrm{OWT}}$, ainsi que des mesures d etat de support.
+
+\textbf{Architecture demandee.}
+\begin{itemize}
+  \item Respect des lois d echelle (Froude) et geometrie lineaire.
+  \item Reproduction precise des sols (granulometrie, limites d Atterberg, saturation).
+  \item Consolidation et compaction pour approcher la raideur et la resistance in situ.
+  \item Charges cycliques basees sur des profils typhon locaux (OpenFAST/TurbSim).
+  \item Mesure fine des shifts de $f_0^{\mathrm{OWT}}$ via OMA avancee.
+\end{itemize}
+
+\section{IA auto-calibrante basee sur un transformer}
+\textbf{Idee centrale.} Un transformer integre une base physique (TIM) et un module
+slot-attention pour auto-calibrer la raideur sol-pieu.
+
+\subsection{Module slot-attention (auto-calibration)}
+\textbf{Role.} Apprendre la matrice de raideur initiale $H_{ij}^0$ et une suite de matrices
+$H_{ij}^n$ qui representent des chutes plastiques de raideur, ainsi que leurs activations
+$w_n(t)$.
+
+\textbf{Formulation.}
+\begin{equation}
+H_{ij}(t) = H_{ij}^0 - \sum_{n=1}^{20} w_n(t)\,H_{ij}^n
+\end{equation}
+
+\textbf{Slots.} 21 slots au total : 1 slot pour $H_{ij}^0$ et 20 slots pour les paires
+$\{w_n(t), H_{ij}^n\}$.
+
+\textbf{Architecture interne.}
+\begin{itemize}
+  \item Cross-attention pour lier slots et entrees encodees.
+  \item Self-attention pour specialiser chaque slot sans chevauchement.
+  \item MLP par slot pour decoder en matrices de raideur et activations.
+\end{itemize}
+
+\subsection{Pre-entrainement et pertes}
+\textbf{Donnees.} FEM haute fidelite + contraintes physiques derivees de la TIM.
+
+\textbf{Pertes physiques.}
+\begin{itemize}
+  \item LoT1 : coherence frequence (energie conservee).
+  \item LoT2 : dissipation non negative et evolution monotone.
+  \item Positivite : $H_{ij}(t) \succeq 0$.
+\end{itemize}
+
+\textbf{Perte totale.}
+\begin{equation}
+\mathcal{L}_{\mathrm{total}} = \alpha\mathcal{L}_{\mathrm{data}} + \beta\mathcal{L}_{\mathrm{freq}} +
+\gamma(\mathcal{L}_{1\mathrm{mon}} + \mathcal{L}_{2\mathrm{mon}}) + \delta\mathcal{L}_{\mathrm{pos}}
+\end{equation}
+
+\section{Transformer complet (end-to-end)}
+\textbf{Flux.} Encodeur (entrees fixes + charges) $\rightarrow$ module auto-calibrant
+$\rightarrow$ encodeur de raideur $\rightarrow$ decodeur cross-attention $\rightarrow$
+$H_{ij}(t)$ et $f_0^{\mathrm{OWT}}(t)$.
+
+\textbf{Points cle.}
+\begin{itemize}
+  \item Masquage pour eviter les fuites de donnees futures.
+  \item Petits taux d apprentissage pour les slots afin de conserver leur robustesse.
+  \item Pertes physiques conservees au niveau end-to-end.
+\end{itemize}
+
+\section{Tests, validation et incertitudes}
+\textbf{Module slot-attention.}
+\begin{itemize}
+  \item Split 85/15 sur ~300 FEM scenarios.
+  \item Metriques : MSE, $R^2$, NRMSE, MAPE, biais.
+  \item Validation externe sur centrifugeuse (criteres MAPE $< 10\%$, biais $< 5\%$).
+\end{itemize}
+
+\textbf{Modele complet.}
+\begin{itemize}
+  \item Split 85/15 sur donnees analytiques + essais reduits.
+  \item Validation hors domaine : essais reserves + donnees terrain.
+  \item Exigence forte : MAPE $< 1\%$ pour $f_0^{\mathrm{OWT}}$.
+\end{itemize}
+
+\textbf{Incertitude.} Bruit gaussien sur entrees + Monte Carlo dropout pour estimer
+aleatoire et epistemique (CoV cible $< 10\%$).
+
+\section{XAI par cartographie de l attention}
+\textbf{Methode.}
+\begin{itemize}
+  \item Heatmaps attention multi-tetes (slot-attention et transformer).
+  \item Attention roll-out pour attribuer la contribution de chaque entree.
+  \item Comparaison aux attentes physiques (pics de charge, chutes de raideur).
+\end{itemize}
+
+\section{Ce qui a ete fait}
+\begin{itemize}
+  \item Lecture et extraction des pages 29 a 37.
+  \item Synthese de l architecture technique et des exigences.
+  \item Mise en forme LaTeX en suivant l organisation des sections demandees.
+\end{itemize}
+
+\end{document}

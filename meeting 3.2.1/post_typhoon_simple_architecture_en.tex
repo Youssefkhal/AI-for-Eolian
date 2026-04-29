@@ -1,0 +1,65 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{hyperref}
+
+\title{Post-typhoon OWT -- Simple architecture (Pages 29--37)}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Goal}
+Build a physics-informed AI that predicts $f_0^{\mathrm{OWT}}$ shifts under typhoon loads.
+Use a transformer with a mandatory 21-slot self-calibration module.
+
+\section{Experimental data (simplified)}
+\begin{itemize}
+  \item Use scaled modeling with Froude similitude.
+  \item Reproduce soil grain size and Atterberg limits.
+  \item Apply cyclic typhoon-like load histories.
+  \item Measure $f_0^{\mathrm{OWT}}$ precisely (OMA).
+\end{itemize}
+
+\section{Slot-attention self-calibration (mandatory 21 slots)}
+\textbf{Idea.} Learn soil-pile stiffness degradation with 21 slots:
+\begin{itemize}
+  \item Slot 1 outputs initial stiffness $H_{ij}^0$.
+  \item Slots 2--21 output $H_{ij}^n$ and gate $w_n(t)$ for $n=1..20$.
+\end{itemize}
+
+\textbf{Equation.}
+\begin{equation}
+H_{ij}(t) = H_{ij}^0 - \sum_{n=1}^{20} w_n(t)\,H_{ij}^n
+\end{equation}
+
+\section{Transformer (simplified)}
+\begin{itemize}
+  \item Encoder: load history + soil/pile parameters.
+  \item Insert calibrated stiffness tokens from slot-attention.
+  \item Decoder: masked self-attention predicts $f_0^{\mathrm{OWT}}(t)$.
+\end{itemize}
+
+\section{Physics losses (simple)}
+\begin{itemize}
+  \item LoT1: frequency consistency (energy conservation).
+  \item LoT2: monotone, non-negative stiffness drops.
+  \item Positivity of $H_{ij}(t)$.
+\end{itemize}
+
+\section{Training and validation (simple)}
+\begin{itemize}
+  \item Pre-train slots on FEM-like data (85/15 split).
+  \item Train full model on analytical + experimental data.
+  \item Validate on held-out scenarios and field-like data.
+  \item Metrics: NRMSE, MAPE, $R^2$.
+\end{itemize}
+
+\section{XAI (simple)}
+\begin{itemize}
+  \item Attention heatmaps for slot-attention and transformer.
+  \item Attention roll-out for end-to-end attribution.
+\end{itemize}
+
+\end{document}

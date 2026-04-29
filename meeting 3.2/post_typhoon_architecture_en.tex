@@ -1,0 +1,117 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\title{Post-typhoon OWT -- Synthesis of pages 29 to 37}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Scope and objective}
+This document explains the technical architecture required in pages 29 to 37 of
+``PostTyphoon\_OWT\_natural\_frequency\_shift\_prediction''. It covers the experimental
+scheme, the physics-informed self-calibrating AI, training, validation, and
+attention-based XAI.
+
+\section{Experimental design and data acquisition}
+\textbf{Goal.} Produce a dense and reproducible dataset linking typhoon loads to
+natural-frequency shifts $f_0^{\mathrm{OWT}}$, along with support-condition measurements.
+
+\textbf{Required architecture.}
+\begin{itemize}
+  \item Scaling laws (Froude) and linear geometry scaling.
+  \item Accurate soil reproduction (grain size, Atterberg limits, saturation).
+  \item Consolidation and compaction to match in-situ stiffness and strength.
+  \item Cyclic loads from local typhoon profiles (OpenFAST/TurbSim).
+  \item Precise $f_0^{\mathrm{OWT}}$ shifts from advanced OMA.
+\end{itemize}
+
+\section{Transformer-based self-calibrating AI}
+\textbf{Core idea.} A transformer integrates a TIM physics core and a slot-attention
+module to auto-calibrate soil-pile stiffness.
+
+\subsection{Slot-attention module (self-calibration)}
+\textbf{Role.} Learn the initial stiffness matrix $H_{ij}^0$, and a sequence of plastic
+stiffness drops $H_{ij}^n$ with their activations $w_n(t)$.
+
+\textbf{Formulation.}
+\begin{equation}
+H_{ij}(t) = H_{ij}^0 - \sum_{n=1}^{20} w_n(t)\,H_{ij}^n
+\end{equation}
+
+\textbf{Slots.} 21 slots total: 1 slot for $H_{ij}^0$ and 20 slots for
+$\{w_n(t), H_{ij}^n\}$ pairs.
+
+\textbf{Internal architecture.}
+\begin{itemize}
+  \item Cross-attention to link slots with encoded inputs.
+  \item Self-attention to enforce slot specialization.
+  \item Per-slot MLP to decode matrices and activation scalars.
+\end{itemize}
+
+\subsection{Pre-training and losses}
+\textbf{Data.} High-fidelity FEM data plus TIM-based physics constraints.
+
+\textbf{Physics losses.}
+\begin{itemize}
+  \item LoT1: frequency consistency (energy conservation).
+  \item LoT2: non-negative dissipation and monotonic drops.
+  \item Positivity: $H_{ij}(t) \succeq 0$.
+\end{itemize}
+
+\textbf{Total loss.}
+\begin{equation}
+\mathcal{L}_{\mathrm{total}} = \alpha\mathcal{L}_{\mathrm{data}} + \beta\mathcal{L}_{\mathrm{freq}} +
+\gamma(\mathcal{L}_{1\mathrm{mon}} + \mathcal{L}_{2\mathrm{mon}}) + \delta\mathcal{L}_{\mathrm{pos}}
+\end{equation}
+
+\section{End-to-end transformer}
+\textbf{Flow.} Encoder (fixed inputs + load history) $\rightarrow$ self-calibration
+module $\rightarrow$ stiffness encoding $\rightarrow$ decoder cross-attention
+$\rightarrow$ $H_{ij}(t)$ and $f_0^{\mathrm{OWT}}(t)$.
+
+\textbf{Key points.}
+\begin{itemize}
+  \item Masked self-attention to avoid future-data leakage.
+  \item Small learning rates for slots to preserve robustness.
+  \item Physics losses retained during end-to-end training.
+\end{itemize}
+
+\section{Testing, validation, and uncertainty}
+\textbf{Slot-attention module.}
+\begin{itemize}
+  \item 85/15 split on ~300 FEM scenarios.
+  \item Metrics: MSE, $R^2$, NRMSE, MAPE, bias.
+  \item External validation on centrifuge tests (MAPE $< 10\%$, bias $< 5\%$).
+\end{itemize}
+
+\textbf{Full model.}
+\begin{itemize}
+  \item 85/15 split on analytical + scaled experiments.
+  \item Out-of-domain validation: reserved tests + field data.
+  \item Strong requirement: MAPE $< 1\%$ for $f_0^{\mathrm{OWT}}$.
+\end{itemize}
+
+\textbf{Uncertainty.} Gaussian noise on inputs and Monte Carlo dropout to estimate
+aleatoric and epistemic uncertainty (target CoV $< 10\%$).
+
+\section{Attention-based XAI}
+\textbf{Method.}
+\begin{itemize}
+  \item Attention heatmaps for slot-attention and full transformer.
+  \item Attention roll-out for end-to-end attribution.
+  \item Compare to physical expectations (peak loads, stiffness drops).
+\end{itemize}
+
+\section{Work performed}
+\begin{itemize}
+  \item Extracted and analyzed pages 29 to 37.
+  \item Structured the required technical architecture and requirements.
+  \item Produced this LaTeX synthesis following the requested organization.
+\end{itemize}
+
+\end{document}

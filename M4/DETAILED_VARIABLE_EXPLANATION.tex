@@ -1,0 +1,836 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{float}
+
+\geometry{margin=1in}
+
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  commentstyle=\color{gray},
+  keywordstyle=\color{blue},
+  stringstyle=\color{red},
+  tabsize=2,
+  frame=tb,
+  backgroundcolor=\color{white!95!black}
+}
+
+\title{Complete Explanation of Architecture Diagrams\\Variables, Equations, and Data Flow}
+\author{Detailed Guide with All Equations}
+\date{}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Notation and Abbreviations}
+
+\subsection{Dimension Variables (Always Used)}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|l|}
+\hline
+\textbf{Symbol} & \textbf{Value} & \textbf{Definition} \\
+\hline
+$B$ & 16 & Batch size (number of samples processed at once) \\
+\hline
+$T$ & 50 & Sequence length (time steps in load history) \\
+\hline
+$D$ & 64 & Hidden/embedding dimension (internal representation size) \\
+\hline
+$N$ & 8 & Number of input parameters (soil/pile characteristics) \\
+\hline
+$n$ & 20 & Number of yield surfaces (stiffness degradation stages) \\
+\hline
+\end{tabular}
+\end{table}
+
+\textbf{What these mean:}
+
+\begin{itemize}
+  \item \textbf{B = 16}: We process 16 samples simultaneously (a batch)
+  \item \textbf{T = 50}: Each load history has 50 time steps
+  \item \textbf{D = 64}: We represent everything internally as 64-dimensional vectors
+  \item \textbf{N = 8}: Soil parameters include 8 different measurements
+  \item \textbf{n = 20}: Foundation can degrade through 20 different stages
+\end{itemize}
+
+\section{Tensor Notation}
+
+When we write a shape like $(B, T, D)$, it means:
+\begin{itemize}
+  \item \textbf{First dimension}: $B = 16$ items (batch size)
+  \item \textbf{Second dimension}: $T = 50$ items (sequence length)
+  \item \textbf{Third dimension}: $D = 64$ items (embedding dimension)
+  \item \textbf{Total elements}: $16 \times 50 \times 64 = 51,200$ numbers
+\end{itemize}
+
+\section{DIAGRAM 1: SimpleTransformer Architecture}
+
+This is the \textbf{complete end-to-end model}. Let me explain every box:
+
+\subsection{INPUT STAGE}
+
+\subsubsection{1. Load Sequence (Green box, top-left)}
+
+\begin{equation}
+\text{load\_sequence} \in \mathbb{R}^{B \times T \times 1} = \mathbb{R}^{16 \times 50 \times 1}
+\end{equation}
+
+\textbf{What is it?}
+\begin{itemize}
+  \item Time series of wind and wave loads acting on the OWT
+  \item 16 different scenarios (batch size)
+  \item 50 time steps for each scenario
+  \item 1 scalar value per time step (the load magnitude)
+\end{itemize}
+
+\textbf{Example values:}
+\begin{lstlisting}
+load_sequence[0, :, 0] = [0.5, 0.7, 0.6, ..., 0.8]  # Sample 0
+load_sequence[1, :, 0] = [0.3, 0.4, 0.5, ..., 0.6]  # Sample 1
+...
+# Each row is a different load history
+\end{lstlisting}
+
+\textbf{Physical interpretation:}
+\begin{itemize}
+  \item First time step: initial load value
+  \item Middle time steps: how load changes during typhoon
+  \item Last time step: final load value
+\end{itemize}
+
+\subsubsection{2. Soil Parameters (Green box, top-right)}
+
+\begin{equation}
+\text{soil\_params} \in \mathbb{R}^{B \times N} = \mathbb{R}^{16 \times 8}
+\end{equation}
+
+\textbf{What is it?}
+\begin{itemize}
+  \item Constant properties of the soil and pile (don't change over time)
+  \item 16 different foundation scenarios
+  \item 8 different measurements per scenario
+\end{itemize}
+
+\textbf{The 8 parameters typically include:}
+\begin{itemize}
+  \item $G_{\max}$: Maximum shear modulus of soil
+  \item $s_u$: Undrained shear strength
+  \item $EI$: Bending stiffness of pile
+  \item $\phi$: Friction angle
+  \item $d_p$: Pile diameter
+  \item $h_p$: Pile length
+  \item $\gamma_d$: Damping ratio
+  \item $I_D$: Relative density
+\end{itemize}
+
+\textbf{Example values:}
+\begin{lstlisting}
+soil_params[0] = [8.5, 45.2, 1200, 32.5, 0.5, 30, 0.05, 0.65]
+soil_params[1] = [7.2, 38.1, 1100, 30.1, 0.5, 30, 0.06, 0.55]
+# Each row is a different soil profile
+\end{lstlisting}
+
+\subsection{PROCESSING STAGE 1: Load Processing (Pink box)}
+
+\subsubsection{3. Embed Loads + Positional Encoding (Pink box, left)}
+
+\textbf{Input:} $\text{load\_sequence} \in \mathbb{R}^{16 \times 50 \times 1}$
+
+\textbf{Operation:}
+
+\begin{equation}
+\text{embedded\_loads} = W_e \cdot \text{load\_sequence} + \text{pos\_enc}
+\end{equation}
+
+Where:
+\begin{itemize}
+  \item $W_e$: Weight matrix for embedding (learnable) $(1 \times D) = (1 \times 64)$
+  \item $\text{pos\_enc}$: Positional encoding (pre-computed, not learnable)
+  \item Formula: $\text{pos\_enc}_{t,d} = \sin(t/10000^{2d/D})$ for even $d$, $\cos(...)$ for odd $d$
+\end{itemize}
+
+\textbf{What this does:}
+\begin{itemize}
+  \item Transforms 1D load values into 64D embeddings
+  \item Adds positional information so transformer knows time order
+  \item Example: load at $t=0$ gets different encoding than $t=49$
+\end{itemize}
+
+\textbf{Positional Encoding Formula:}
+
+\begin{equation}
+\text{PE}(t, 2i) = \sin\left(\frac{t}{10000^{2i/D}}\right), \quad \text{PE}(t, 2i+1) = \cos\left(\frac{t}{10000^{2i/D}}\right)
+\end{equation}
+
+Where:
+\begin{itemize}
+  \item $t$: time step (0 to 49)
+  \item $i$: dimension index (0 to 31)
+  \item $D$: total dimension (64)
+\end{itemize}
+
+\textbf{Why sine/cosine?}
+\begin{itemize}
+  \item Provides different pattern for each position
+  \item Relative positions are always the same
+  \item Allows model to learn ordinal relationships
+\end{itemize}
+
+\textbf{Output:} $\text{embedded\_loads} \in \mathbb{R}^{16 \times 50 \times 64}$
+
+\textbf{Computation:}
+\begin{lstlisting}
+# Pseudo-code
+for batch b in 0:16
+  for time t in 0:50
+    embedded_loads[b, t, :] = embed_layer(load_sequence[b, t, 0])
+    embedded_loads[b, t, :] += positional_encoding[t, :]
+\end{lstlisting}
+
+\subsubsection{4. Output Shape}
+
+\begin{equation}
+\text{shape} = (B, T, D) = (16, 50, 64)
+\end{equation}
+
+This is shown in the diagram as the green box after "Embed Loads + Positional Encoding".
+
+\subsection{PROCESSING STAGE 2: Foundation Stiffness (Right path)}
+
+\subsubsection{5. Slot-Attention Module (Purple box)}
+
+\textbf{Input:} $\text{soil\_params} \in \mathbb{R}^{16 \times 8}$
+
+\textbf{This module has 3 internal steps:}
+
+\paragraph{Step 1: Input Encoding}
+
+\begin{equation}
+\text{encoded\_params} = \tanh(W_{enc} \cdot \text{soil\_params} + b_{enc})
+\end{equation}
+
+Where:
+\begin{itemize}
+  \item $W_{enc}$: Learnable weight matrix $(8 \times 64)$
+  \item $b_{enc}$: Learnable bias $(64)$
+  \item $\tanh$: Activation function (squashes to $[-1, 1]$)
+\end{itemize}
+
+\textbf{Output:} $\text{encoded\_params} \in \mathbb{R}^{16 \times 64}$
+
+\paragraph{Step 2: Cross-Attention (Slots attend to inputs)}
+
+The module has 21 \textbf{learnable slots}:
+
+\begin{equation}
+\text{slots} \in \mathbb{R}^{21 \times 64}
+\end{equation}
+
+Cross-attention computes:
+
+\begin{equation}
+\text{Attention} = \text{softmax}\left(\frac{Q \cdot K^T}{\sqrt{D}}\right) \cdot V
+\end{equation}
+
+Where:
+\begin{itemize}
+  \item $Q$ (Query): slots $(21 \times 64)$ - "What do I need to know?"
+  \item $K$ (Key): encoded params $(16 \times 64)$ - "What information exists?"
+  \item $V$ (Value): encoded params $(16 \times 64)$ - "What are the values?"
+  \item $\sqrt{D} = \sqrt{64} = 8$ - Scaling factor
+\end{itemize}
+
+\textbf{Computation for one sample:}
+
+\begin{equation}
+\text{scores}_{ij} = \frac{\sum_d Q_i[d] \cdot K_j[d]}{\sqrt{64}}
+\end{equation}
+
+\begin{equation}
+\text{attention\_weights}_{ij} = \frac{\exp(\text{scores}_{ij})}{\sum_k \exp(\text{scores}_{ik})}
+\end{equation}
+
+\begin{equation}
+\text{attended\_output}_i = \sum_j \text{attention\_weights}_{ij} \cdot V_j
+\end{equation}
+
+\textbf{Output:} $\text{attended\_slots} \in \mathbb{R}^{16 \times 21 \times 64}$
+
+(16 batches, 21 slots, 64 dimensions, now each slot has seen the input parameters)
+
+\paragraph{Step 3: Self-Attention (Slots talk to each other)}
+
+Now slots communicate with each other:
+
+\begin{equation}
+\text{self\_attention} = \text{softmax}\left(\frac{Q \cdot K^T}{\sqrt{D}}\right) \cdot V
+\end{equation}
+
+Where $Q$, $K$, $V$ are all the attended slots.
+
+\textbf{Purpose:}
+\begin{itemize}
+  \item Slot for $H_0$ learns from context of other slots
+  \item Slots for $H_n$ don't duplicate each other
+  \item Each slot specializes in one distinct role
+\end{itemize}
+
+\textbf{Output:} $\text{refined\_slots} \in \mathbb{R}^{16 \times 21 \times 64}$
+
+\subsubsection{6. Stiffness Outputs (Green boxes after Slot-Attention)}
+
+\textbf{From refined slots, we decode:}
+
+\paragraph{From Slot 1: Initial Stiffness Matrix}
+
+\begin{equation}
+H_0 = \text{MLP}_{H0}(\text{refined\_slots}[:, 0, :])
+\end{equation}
+
+\textbf{Where:}
+\begin{itemize}
+  \item MLP: Multi-layer perceptron (3 layers)
+  \item Input: refined\_slots for position 0 (16 × 64)
+  \item Output: initial stiffness matrices (16 × 3 × 3)
+\end{itemize}
+
+\textbf{The MLP internally:}
+
+\begin{equation}
+h_1 = \text{ReLU}(W_1 \cdot \text{slot} + b_1)
+\end{equation}
+
+\begin{equation}
+h_2 = \text{ReLU}(W_2 \cdot h_1 + b_2)
+\end{equation}
+
+\begin{equation}
+H_0 = W_3 \cdot h_2 + b_3
+\end{equation}
+
+\textbf{Output:} $H_0 \in \mathbb{R}^{16 \times 3 \times 3}$
+
+This is a 3×3 symmetric matrix for each of the 16 samples:
+
+\begin{equation}
+H_0[b] = \begin{bmatrix}
+h_{11}^{(b)} & h_{12}^{(b)} & h_{13}^{(b)} \\
+h_{12}^{(b)} & h_{22}^{(b)} & h_{23}^{(b)} \\
+h_{13}^{(b)} & h_{23}^{(b)} & h_{33}^{(b)}
+\end{bmatrix}
+\end{equation}
+
+\paragraph{From Slots 2-21: Stiffness Drops and Activation Gates}
+
+\begin{equation}
+(H_n, w_n) = \text{MLP}_{drops}(\text{refined\_slots}[:, n, :]) \quad \text{for } n = 1, \ldots, 20
+\end{equation}
+
+Each MLP outputs 10 values:
+\begin{itemize}
+  \item First 9 values: flattened 3×3 matrix $H_n$
+  \item Last 1 value: activation gate (passed through sigmoid)
+\end{itemize}
+
+\begin{equation}
+\text{output}[0:9] = H_n \text{ (3×3 matrix)}
+\end{equation}
+
+\begin{equation}
+w_n = \sigma(\text{output}[9]) = \frac{1}{1 + e^{-\text{output}[9]}}
+\end{equation}
+
+Where $\sigma$ is the sigmoid function.
+
+\textbf{Outputs:}
+\begin{itemize}
+  \item $H_{\text{drops}} \in \mathbb{R}^{16 \times 20 \times 3 \times 3}$
+  \item $w_{\text{gates}} \in \mathbb{R}^{16 \times 20}$
+\end{itemize}
+
+\subsection{PROCESSING STAGE 3: Stiffness Evolution (Pink box)}
+
+\subsubsection{7. Stiffness Evolution Module}
+
+\textbf{Input:} $H_0, H_{\text{drops}}, w_{\text{gates}}$
+
+\textbf{Formula:}
+
+\begin{equation}
+H_{\text{evolved}} = H_0 - \sum_{n=1}^{20} w_n \cdot H_n
+\end{equation}
+
+\textbf{Detailed computation for one sample $b$:}
+
+\begin{equation}
+H_{\text{evolved}}[b] = H_0[b] - \sum_{n=1}^{20} w_n[b] \cdot H_n[b]
+\end{equation}
+
+Where:
+\begin{itemize}
+  \item $w_n[b] \in [0, 1]$: Scalar weight for sample $b$, drop $n$
+  \item $H_n[b] \in \mathbb{R}^{3 \times 3}$: Matrix for sample $b$, drop $n$
+  \item Multiplication: scalar times matrix (element-wise scaling)
+\end{itemize}
+
+\textbf{Step-by-step for one sample:}
+
+\begin{equation}
+\text{degradation}[b] = w_1[b] \cdot H_1[b] + w_2[b] \cdot H_2[b] + \cdots + w_{20}[b] \cdot H_{20}[b]
+\end{equation}
+
+\begin{equation}
+H_{\text{evolved}}[b] = H_0[b] - \text{degradation}[b]
+\end{equation}
+
+\textbf{Physical meaning:}
+\begin{itemize}
+  \item Initially ($t=0$): all $w_n = 0$, so $H_{\text{evolved}} = H_0$
+  \item As loading increases: $w_n$ increases (sigmoid activation)
+  \item More drops activated: $H_{\text{evolved}}$ decreases (stiffness degrades)
+  \item Finally ($t=T$): $w_n \to 1$, $H_{\text{evolved}} \approx H_0 - \sum H_n$
+\end{itemize}
+
+\textbf{Output:} $H_{\text{evolved}} \in \mathbb{R}^{16 \times 3 \times 3}$
+
+This represents the foundation stiffness after all degradation from the entire load history.
+
+\subsection{PROCESSING STAGE 4: Concatenation (Pink box)}
+
+\subsubsection{8. Concatenate Stiffness + Loads}
+
+We need to combine:
+\begin{itemize}
+  \item Embedded loads: $(16, 50, 64)$
+  \item Evolved stiffness: $(16, 3, 3)$
+\end{itemize}
+
+\textbf{Process:}
+
+\begin{equation}
+H_{\text{token}} = \text{embed}(H_{\text{evolved}})
+\end{equation}
+
+Convert the 3×3 matrix into a 64D token:
+
+\begin{equation}
+H_{\text{flattened}} = \text{vec}(H_{\text{evolved}}) \in \mathbb{R}^{16 \times 9}
+\end{equation}
+
+\begin{equation}
+H_{\text{token}} = W_{h} \cdot H_{\text{flattened}} + b_h \in \mathbb{R}^{16 \times 64}
+\end{equation}
+
+\textbf{Concatenation:}
+
+\begin{equation}
+\text{concat\_input} = [\text{H\_token}; \text{embedded\_loads}] \in \mathbb{R}^{16 \times 51 \times 64}
+\end{equation}
+
+\textbf{Composition:}
+\begin{itemize}
+  \item Position 0: Stiffness token (16, 64)
+  \item Positions 1-50: Load tokens (16, 50, 64)
+  \item Total: 51 tokens per sample, 64D each
+\end{itemize}
+
+\textbf{Output:} $(B, T+1, D) = (16, 51, 64)$
+
+\subsection{PROCESSING STAGE 5: Transformer Encoder}
+
+\subsubsection{9. Transformer Encoder (Multi-Head Self-Attention)}
+
+\textbf{Input:} $(16, 51, 64)$
+
+\textbf{Operation:}
+
+\begin{equation}
+\text{encoder\_output} = \text{TransformerEncoder}(\text{concat\_input})
+\end{equation}
+
+\textbf{Internal computation (one layer):}
+
+\begin{equation}
+\text{attention} = \text{MultiHeadAttention}(Q, K, V)
+\end{equation}
+
+\textbf{With multiple heads:}
+
+\begin{equation}
+\text{head}_i = \text{softmax}\left(\frac{Q_i K_i^T}{\sqrt{D/h}}\right) V_i
+\end{equation}
+
+\begin{equation}
+\text{MultiHeadAttention} = \text{Concat}(\text{head}_1, \ldots, \text{head}_4) \cdot W_o
+\end{equation}
+
+Where:
+\begin{itemize}
+  \item $h = 4$: number of heads
+  \item $W_o$: output projection matrix
+\end{itemize}
+
+\textbf{Purpose:}
+\begin{itemize}
+  \item Each position "looks at" all other positions
+  \item Learns which positions are related
+  \item Example: Which loads matter given current stiffness?
+\end{itemize}
+
+\textbf{Then feed-forward:}
+
+\begin{equation}
+\text{FFN}(x) = \text{ReLU}(W_1 x + b_1) W_2 + b_2
+\end{equation}
+
+\textbf{Output:} $\text{encoder\_output} \in \mathbb{R}^{16 \times 51 \times 64}$
+
+The 51 tokens now contain globally processed information.
+
+\subsection{PROCESSING STAGE 6: Transformer Decoder}
+
+\subsubsection{10. Transformer Decoder (Cross-Attention)}
+
+\textbf{Input 1 (Memory):} $\text{encoder\_output} \in \mathbb{R}^{16 \times 51 \times 64}$
+
+\textbf{Input 2 (Target):} $\text{encoder\_output}$ (same, for simplicity)
+
+\textbf{Decoder Layer:}
+
+\begin{equation}
+\text{cross\_attn} = \text{MultiHeadAttention}(Q_{\text{tgt}}, K_{\text{mem}}, V_{\text{mem}})
+\end{equation}
+
+Where:
+\begin{itemize}
+  \item $Q_{\text{tgt}}$: queries from target (what do we want to generate?)
+  \item $K_{\text{mem}}, V_{\text{mem}}$: keys and values from encoder memory
+\end{itemize}
+
+\textbf{With masking (causal attention):}
+
+\begin{equation}
+\text{scores}_{ij} = \begin{cases}
+\frac{Q_i K_j^T}{\sqrt{D}} & \text{if } j \leq i \\
+-\infty & \text{if } j > i
+\end{cases}
+\end{equation}
+
+This ensures position $i$ only sees positions $j \leq i$ (not future).
+
+\textbf{Output:} $\text{decoder\_output} \in \mathbb{R}^{16 \times 51 \times 64}$
+
+\subsection{PROCESSING STAGE 7: Frequency Prediction (Pink box)}
+
+\subsubsection{11. Frequency Head (MLP)}
+
+\textbf{Input:} First token of decoder output
+
+\begin{equation}
+\text{freq\_token} = \text{decoder\_output}[:, 0, :] \in \mathbb{R}^{16 \times 64}
+\end{equation}
+
+(The stiffness token, which now has full context)
+
+\textbf{MLP computation:}
+
+\begin{equation}
+h = \text{ReLU}(W_1 \cdot \text{freq\_token} + b_1)
+\end{equation}
+
+\begin{equation}
+\text{freq\_pred} = W_2 \cdot h + b_2
+\end{equation}
+
+Where:
+\begin{itemize}
+  \item $W_1 \in \mathbb{R}^{64 \times 64}$: First weight matrix
+  \item $W_2 \in \mathbb{R}^{64 \times 1}$: Output weight matrix (single value)
+\end{itemize}
+
+\textbf{Output:} $\text{freq\_pred} \in \mathbb{R}^{16}$
+
+This is 16 scalar values, one predicted frequency per sample.
+
+\section{DIAGRAM 2: Slot-Attention Flow Diagram}
+
+This expands the purple "Slot-Attention Module" box from Diagram 1.
+
+\subsection{Input Parameters}
+
+\begin{equation}
+\text{Input Parameters} \in \mathbb{R}^{16 \times 8}
+\end{equation}
+
+Example for one sample:
+\begin{lstlisting}
+[G_max, s_u, EI, phi, d_p, h_p, gamma, I_D]
+[8.5, 45.2, 1200, 32.5, 0.5, 30, 0.05, 0.65]
+\end{lstlisting}
+
+\subsection{Input Encoder}
+
+\textbf{Formula:}
+
+\begin{equation}
+\text{encoded} = \text{ReLU}(W_{\text{enc}} \cdot \text{input} + b_{\text{enc}})
+\end{equation}
+
+Where:
+\begin{itemize}
+  \item $W_{\text{enc}} \in \mathbb{R}^{8 \times 64}$: transforms from 8D to 64D
+  \item $b_{\text{enc}} \in \mathbb{R}^{64}$: bias term
+\end{itemize}
+
+\textbf{ReLU activation:}
+
+\begin{equation}
+\text{ReLU}(x) = \max(0, x)
+\end{equation}
+
+\textbf{Output:} $\text{Encoded Input} \in \mathbb{R}^{16 \times 64}$
+
+\subsection{Cross-Attention}
+
+\textbf{Explanation:}
+
+Each of 21 slots "looks at" the encoded input to decide what information is relevant.
+
+\textbf{Computation:}
+
+\begin{equation}
+\text{attended}_{ij} = \sum_k \alpha_{ijk} \cdot V_{jk}
+\end{equation}
+
+Where:
+
+\begin{equation}
+\alpha_{ijk} = \frac{\exp\left(\frac{Q_{id} K_{jd}^T}{\sqrt{D}}\right)}{\sum_m \exp\left(\frac{Q_{id} K_{md}^T}{\sqrt{D}}\right)}
+\end{equation}
+
+\textbf{Output:} $\text{Attended Slots} \in \mathbb{R}^{16 \times 21 \times 64}$
+
+\subsection{Self-Attention Between Slots}
+
+\textbf{Explanation:}
+
+Now the 21 slots communicate with each other to specialize.
+
+\textbf{Computation (same multi-head attention):}
+
+\begin{equation}
+\text{refined}_{ij} = \text{MultiHeadAttention}(\text{attended}_i, \text{attended}_i, \text{attended}_i)
+\end{equation}
+
+\textbf{Output:} $\text{Refined Slots} \in \mathbb{R}^{16 \times 21 \times 64}$
+
+\subsection{MLP H0: Decode Slot 1}
+
+\textbf{Input:} refined\_slots[:, 0, :] (first slot) $\in \mathbb{R}^{16 \times 64}$
+
+\textbf{MLP:}
+
+\begin{equation}
+h = \text{ReLU}(W_1 \cdot \text{slot0} + b_1)
+\end{equation}
+
+\begin{equation}
+\text{h0\_flat} = W_2 \cdot h + b_2
+\end{equation}
+
+\textbf{Reshape to matrix:}
+
+\begin{equation}
+H_0 = \text{reshape}(\text{h0\_flat}, (16, 3, 3))
+\end{equation}
+
+\textbf{Output:} $H_0 \in \mathbb{R}^{16 \times 3 \times 3}$
+
+\subsection{MLP Drops: Decode Slots 2-21}
+
+\textbf{Input:} refined\_slots[:, n, :] for $n = 1, \ldots, 20$ each in $\mathbb{R}^{16 \times 64}$
+
+\textbf{MLP for each slot:}
+
+\begin{equation}
+h_n = \text{ReLU}(W_1 \cdot \text{slot}_n + b_1)
+\end{equation}
+
+\begin{equation}
+\text{output}_n = W_2 \cdot h_n + b_2 \in \mathbb{R}^{16 \times 10}
+\end{equation}
+
+\textbf{Split output:}
+
+\begin{equation}
+H_n = \text{reshape}(\text{output}_n[:, :9], (16, 3, 3))
+\end{equation}
+
+\begin{equation}
+w_n = \sigma(\text{output}_n[:, 9]) = \frac{1}{1 + e^{-\text{output}_n[:, 9]}} \in [0, 1]
+\end{equation}
+
+\section{Loss Functions and Training}
+
+\subsection{Data Loss}
+
+\textbf{Formula:}
+
+\begin{equation}
+\mathcal{L}_{\text{data}} = \frac{1}{B}\sum_{b=1}^{B} (f_{\text{pred}}^b - f_{\text{true}}^b)^2
+\end{equation}
+
+Where:
+\begin{itemize}
+  \item $f_{\text{pred}}^b$: predicted frequency for sample $b$
+  \item $f_{\text{true}}^b$: ground truth frequency for sample $b$
+  \item $B = 16$: batch size
+\end{itemize}
+
+\textbf{Example:}
+\begin{lstlisting}
+pred_freq = [2.3, 2.1, 1.9, ...]  # 16 predicted values
+true_freq = [2.2, 2.0, 2.1, ...]  # 16 ground truth values
+data_loss = mean((pred_freq - true_freq)^2)
+\end{lstlisting}
+
+\subsection{Frequency Consistency Loss (LoT1)}
+
+\textbf{Formula:}
+
+\begin{equation}
+\mathcal{L}_{\text{freq}} = \frac{1}{B}\sum_{b=1}^{B} (f_{\text{pred}}^b - f_{\text{analytical}}^b)^2
+\end{equation}
+
+Where:
+\begin{itemize}
+  \item $f_{\text{analytical}}^b$: analytically computed frequency (from FEM)
+  \item Enforces: predicted frequency matches physics-based calculation
+\end{itemize}
+
+\subsection{Monotonicity Loss (LoT2)}
+
+\textbf{Formula:}
+
+\begin{equation}
+\mathcal{L}_{\text{mono}} = \frac{1}{B}\sum_{b=1}^{B} \sum_{n=1}^{19} \max(0, w_n^b - w_{n+1}^b)
+\end{equation}
+
+Where:
+\begin{itemize}
+  \item $w_n^b$: activation gate for sample $b$, drop $n$
+  \item $\max(0, \cdot)$: penalty only if gate is decreasing (which is bad)
+\end{itemize}
+
+\textbf{Purpose:} Enforce $w_1 \leq w_2 \leq \cdots \leq w_{20}$ (monotonic increase)
+
+\subsection{Positive Stiffness Loss (LoT2)}
+
+\textbf{Formula:}
+
+\begin{equation}
+\mathcal{L}_{\text{pos}} = \frac{1}{B}\sum_{b=1}^{B} \sum_{i=1}^{3} \max(0, -\lambda_i(H_{\text{evolved}}^b))
+\end{equation}
+
+Where:
+\begin{itemize}
+  \item $\lambda_i(H)$: i-th eigenvalue of matrix $H$
+  \item $\max(0, -\lambda)$: penalty if eigenvalue is negative
+\end{itemize}
+
+\textbf{Purpose:} Ensure all eigenvalues are non-negative (positive definite matrix)
+
+\subsection{Composite Loss}
+
+\textbf{Formula:}
+
+\begin{equation}
+\mathcal{L}_{\text{total}} = \alpha \mathcal{L}_{\text{data}} + \beta \mathcal{L}_{\text{freq}} + \gamma \mathcal{L}_{\text{mono}} + \delta \mathcal{L}_{\text{pos}}
+\end{equation}
+
+Where weights are:
+\begin{itemize}
+  \item $\alpha = 1.0$: Emphasize data fitting
+  \item $\beta = 0.5$: Enforce physics consistency
+  \item $\gamma = 0.3$: Enforce smooth degradation
+  \item $\delta = 0.2$: Prevent stiffness collapse
+\end{itemize}
+
+\subsection{Backpropagation}
+
+\textbf{Chain of derivatives:}
+
+\begin{equation}
+\frac{\partial \mathcal{L}}{\partial \theta} = \frac{\partial \mathcal{L}}{\partial \text{freq\_pred}} \cdot \frac{\partial \text{freq\_pred}}{\partial \text{eq\_token}} \cdot \cdots \cdot \frac{\partial H_0}{\partial \theta}
+\end{equation}
+
+\textbf{Parameter update (Adam optimizer):}
+
+\begin{equation}
+\theta_{\text{new}} = \theta_{\text{old}} - \text{lr} \cdot m_t / \sqrt{v_t + \epsilon}
+\end{equation}
+
+Where:
+\begin{itemize}
+  \item $m_t$: first moment estimate (momentum)
+  \item $v_t$: second moment estimate (variance)
+  \item $\text{lr} = 0.001$: learning rate
+  \item $\epsilon = 10^{-8}$: small constant for stability
+\end{itemize}
+
+\section{Complete Data Flow Example}
+
+\textbf{One complete forward pass:}
+
+\begin{enumerate}
+  \item \textbf{Input}: 16 load sequences, 16 soil profiles
+  \item \textbf{Step 1}: Embed loads $(16, 50, 1) \rightarrow (16, 50, 64)$
+  \item \textbf{Step 2}: Slot-Attention on soil params $(16, 8) \rightarrow (H_0, H_d, w_g)$
+  \item \textbf{Step 3}: Evolve stiffness $\rightarrow H_{\text{evolved}} (16, 3, 3)$
+  \item \textbf{Step 4}: Concat loads + stiffness $\rightarrow (16, 51, 64)$
+  \item \textbf{Step 5}: Encoder processes all tokens $\rightarrow (16, 51, 64)$
+  \item \textbf{Step 6}: Decoder cross-attends $\rightarrow (16, 51, 64)$
+  \item \textbf{Step 7}: Extract freq token, predict $\rightarrow (16,)$
+  \item \textbf{Output}: 16 predicted frequencies
+\end{enumerate}
+
+\textbf{Then compute losses, backprop, and update all weights.}
+
+\section{Summary Table}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Component} & \textbf{Input Shape} & \textbf{Output Shape} \\
+\hline
+Load Embedding & $(16, 50, 1)$ & $(16, 50, 64)$ \\
+\hline
+Slot-Attention & $(16, 8)$ & $H_0: (16,3,3)$, $H_d: (16,20,3,3)$, $w_g: (16,20)$ \\
+\hline
+Stiffness Evolution & $H_0, H_d, w_g$ & $(16, 3, 3)$ \\
+\hline
+Concatenation & Loads + stiffness & $(16, 51, 64)$ \\
+\hline
+Encoder & $(16, 51, 64)$ & $(16, 51, 64)$ \\
+\hline
+Decoder & $(16, 51, 64)$ & $(16, 51, 64)$ \\
+\hline
+Freq Head & $(16, 64)$ & $(16,)$ \\
+\hline
+\end{tabular}
+\end{table}
+
+\end{document}

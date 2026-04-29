@@ -1,0 +1,68 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  stringstyle=\color{teal},
+  showstringspaces=false
+}
+
+\title{Post-typhoon OWT -- Architecture and Code (Full + Simple)}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Architecture summary (pages 29--37)}
+\textbf{Goal.} Predict typhoon-induced shifts of $f_0^{\mathrm{OWT}}$ using a physics-informed,
+self-calibrating transformer.
+
+\textbf{Key requirements:}
+\begin{itemize}
+  \item Scaled experiments with Froude similitude and realistic soil reproduction.
+  \item A 21-slot self-calibration module (mandatory).
+  \item Transformer encoder-decoder with masked self-attention and cross-attention.
+  \item Physics losses enforcing LoT1 and LoT2 (frequency consistency and monotone
+        non-negative stiffness degradation).
+  \item Validation on separate data splits and attention-based XAI (heatmaps + roll-out).
+\end{itemize}
+
+\section{Full implementation (meeting 3.2)}
+This version includes the full architecture, training pipeline, and XAI outputs.
+
+\subsection{Model (slot-attention + encoder-decoder)}
+\lstinputlisting[language=Python]{../meeting\ 3.2/model.py}
+
+\subsection{Data simulation (FEM, analytical, experimental, field)}
+\lstinputlisting[language=Python]{../meeting\ 3.2/data.py}
+
+\subsection{Physics losses}
+\lstinputlisting[language=Python]{../meeting\ 3.2/losses.py}
+
+\subsection{Training and validation}
+\lstinputlisting[language=Python]{../meeting\ 3.2/train.py}
+
+\section{Simple implementation (meeting 3.2.1)}
+This version keeps the mandatory 21-slot architecture and a simplified transformer.
+
+\subsection{Simple 21-slot demo}
+\lstinputlisting[language=Python]{./simple_slot_transformer_demo.py}
+
+\section{How to run}
+\begin{verbatim}
+C:\Users\youss\Downloads\PFE\.venv\Scripts\python.exe "meeting 3.2\post_typhoon_slot_transformer.py"
+C:\Users\youss\Downloads\PFE\.venv\Scripts\python.exe "meeting 3.2.1\simple_slot_transformer_demo.py"
+\end{verbatim}
+
+\end{document}

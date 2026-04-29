@@ -1,0 +1,402 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{float}
+
+\geometry{margin=1in}
+
+% Code styling
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  commentstyle=\color{gray},
+  keywordstyle=\color{blue},
+  numberstyle=\tiny,
+  stringstyle=\color{red},
+  tabsize=2,
+  showstringspaces=false,
+  frame=tb,
+  backgroundcolor=\color{white!95!black}
+}
+
+\title{Physics-Informed Transformer for Offshore Wind Turbine \\ Natural Frequency Shift Prediction}
+\author{Based on PostTyphoon\_OWT Natural Frequency Shift Prediction (Pages 29--37)}
+\date{Simplified Implementation Guide}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+\newpage
+
+\section{Overview}
+
+This document explains a simplified implementation of a physics-informed transformer model that predicts how the natural frequency of offshore wind turbines (OWT) changes during typhoons due to soil degradation around the monopile foundation.
+
+\subsection{Problem}
+During typhoons, cyclic wind and wave loads degrade the soil around OWT monopiles, reducing the stiffness of the foundation. This stiffness loss causes shifts in the OWT system's natural frequency, which can lead to resonance and catastrophic failure.
+
+\subsection{Solution}
+We build a transformer-based AI model that:
+\begin{enumerate}
+  \item Learns to calibrate foundation stiffness matrices from soil/pile parameters (Slot-Attention Module)
+  \item Evolves stiffness over load sequences using physics formulations
+  \item Predicts natural frequency shifts using encoder-decoder attention
+  \item Enforces thermodynamic laws during training via physics-aware loss functions
+\end{enumerate}
+
+\section{Core Architecture}
+
+\subsection{1. Slot-Attention Calibration Module}
+
+\subsubsection{Purpose}
+The slot-attention module is a self-calibrating neural network that learns to map soil and pile parameters (e.g., shear modulus $G_{\max}$, shear strength $s_u$, pile stiffness $EI$) to foundation stiffness matrices without manual case-by-case tuning.
+
+\subsubsection{Mechanism}
+
+The module has 21 learnable \textbf{slots}:
+\begin{align}
+  \text{Slot 1:} \quad & H_0 \text{ (initial 3×3 stiffness matrix)} \\
+  \text{Slots 2--21:} \quad & (H_n, w_n(t)) \text{ for } n=1,\ldots,20
+\end{align}
+
+\textbf{Forward flow:}
+\begin{enumerate}
+  \item \textbf{Input Encoding:} Soil/pile parameters $\mathbf{p}$ are embedded: $\mathbf{e}_p = W_e \mathbf{p}$
+  \item \textbf{Cross-Attention:} Slots attend to input features. This maps the relationships between calibration variables and available parameters.
+  \item \textbf{Self-Attention:} Slots communicate with each other, ensuring each slot specializes in one task without duplication.
+  \item \textbf{MLP Decoding:}
+    \begin{itemize}
+      \item Slot 1 $\xrightarrow{\text{MLP}_1}$ $H_0 \in \mathbb{R}^{3 \times 3}$ (9 values)
+      \item Slots 2--21 $\xrightarrow{\text{MLP}_n}$ $(H_n, w_n) \in \mathbb{R}^{3 \times 3} \times [0,1]$ (10 values each)
+    \end{itemize}
+\end{enumerate}
+
+\subsubsection{Code Structure}
+
+\begin{lstlisting}
+class SlotAttentionModule(nn.Module):
+    def __init__(self, input_dim=8, hidden_dim=64, num_slots=21):
+        # Initialize slots, attention mechanisms, and MLPs
+
+    def forward(self, inputs):
+        # inputs: (batch_size, 8) - soil parameters
+        # outputs: H0, H_drops, w_gates
+        encoded_inputs = self.input_encoder(inputs)
+        slots_attended = self.cross_attention(slots, inputs)
+        slots_refined = self.self_attention(slots_attended)
+        H0 = self.mlp_h0(slots_refined[:, 0, :])  # Slot 1
+        H_drops, w_gates = decode_remaining_slots()
+        return H0, H_drops, w_gates
+\end{lstlisting}
+
+\subsection{2. Stiffness Evolution Model}
+
+\subsubsection{Theory}
+Foundation stiffness degrades under cyclic loading via the Thermodynamic Inertial Macroelement (TIM) formulation:
+
+\begin{equation}
+H_{ij}(t) = H^0_{ij} - \sum_{n=1}^{20} w_n(t) \cdot H^n_{ij}
+\end{equation}
+
+where:
+\begin{itemize}
+  \item $H_{ij}(t)$: evolved stiffness matrix at load $t$
+  \item $H^0_{ij}$: initial (tangent) stiffness matrix
+  \item $H^n_{ij}$: plastic stiffness drop matrix for yield surface $n$
+  \item $w_n(t) \in [0,1]$: sigmoid activation gate (0=inactive, 1=fully active)
+\end{itemize}
+
+The activation gates smoothly trigger stiffness drops as loads increase, simulating progressive failure.
+
+\subsubsection{Code}
+
+\begin{lstlisting}
+class StiffnessEvolution(nn.Module):
+    def forward(self, H0, H_drops, w_gates):
+        # H0: (batch, 3, 3)
+        # H_drops: (batch, 20, 3, 3)
+        # w_gates: (batch, 20) - sigmoid outputs
+
+        degradation = 0
+        for i in range(20):
+            weight = w_gates[:, i].unsqueeze(-1).unsqueeze(-1)
+            degradation += weight * H_drops[:, i, :]
+
+        H_evolved = H0 - degradation
+        return H_evolved
+\end{lstlisting}
+
+\subsection{3. Transformer Encoder-Decoder}
+
+\subsubsection{Architecture}
+
+\begin{figure}[H]
+\centering
+\fbox{\begin{minipage}{0.8\textwidth}
+\textbf{ENCODER:}
+\begin{enumerate}
+  \item Embed load time series: $\mathbf{L} \in \mathbb{R}^{T \times 1}$
+  \item Add positional encodings (sinusoidal)
+  \item Slot-Attention outputs stiffness $H(t)$ as encoder context
+  \item Multi-head self-attention over load sequence
+\end{enumerate}
+
+\textbf{DECODER:}
+\begin{enumerate}
+  \item Cross-attend to encoder outputs (loads $\times$ stiffness information)
+  \item Masked self-attention (prevents looking at future outputs)
+  \item Feed-forward network
+  \item Dense layer: output $\rightarrow$ frequency prediction
+\end{enumerate}
+\end{minipage}}
+\end{figure}
+
+\textbf{Why this design?}
+\begin{itemize}
+  \item Encoder captures \textbf{what changes} (load history and soil degradation)
+  \item Decoder captures \textbf{how} foundation-structure interaction evolves
+  \item Masking prevents data leakage: output frequency at time $t$ cannot depend on loads at time $t'>t$
+\end{itemize}
+
+\subsubsection{Code}
+
+\begin{lstlisting}
+class SimpleTransformer(nn.Module):
+    def forward(self, load_sequence, soil_pile_params):
+        # Step 1: Calibration predicts foundation stiffness
+        H0, H_drops, w_gates = self.calibration(soil_pile_params)
+        H_evolved = self.stiffness_evolution(H0, H_drops, w_gates)
+
+        # Step 2: Embed loads with positional encoding
+        embedded_loads = self.embed_loads(load_sequence)  # (B, T, D)
+        embedded_loads += positional_encoding(T, D)
+
+        # Step 3: Concatenate stiffness token with loads
+        encoder_input = [H_evolved_token; embedded_loads]  # (B, T+1, D)
+
+        # Step 4: Transformer encoder
+        encoder_output = self.transformer_encoder(encoder_input)
+
+        # Step 5: Transformer decoder
+        decoder_output = self.transformer_decoder(encoder_output)
+
+        # Step 6: Predict frequency
+        freq_pred = self.freq_head(decoder_output[:, 0, :])
+
+        return freq_pred, H_evolved
+\end{lstlisting}
+
+\section{Physics-Informed Loss Functions}
+
+To ensure the model respects physical laws, we combine data loss with three physics-based penalty terms:
+
+\subsection{1. Data Loss (Model Accuracy)}
+
+\begin{equation}
+\mathcal{L}_{\text{data}} = \text{MSE}(f_0^{\text{pred}}, f_0^{\text{true}})
+\end{equation}
+
+Measures how well predicted frequency $f_0^{\text{pred}}$ matches ground truth $f_0^{\text{true}}$.
+
+\subsection{2. Energy Conservation Loss (LoT1)}
+
+\begin{equation}
+\mathcal{L}_{\text{freq}} = \text{MSE}(f_0^{\text{pred}}, f_0^{\text{analytical}})
+\end{equation}
+
+The predicted frequency should match the analytically computed frequency (using analytical impedance functions). This indirectly enforces energy conservation because analytical calculations are thermodynamically consistent.
+
+\subsection{3. Monotonicity Loss (LoT2)}
+
+\begin{equation}
+\mathcal{L}_{1,\text{mon}} = \sum_{n=1}^{19} \max(0, w_n - w_{n+1})
+\end{equation}
+
+Enforces that activation gates are non-decreasing: $w_1(t) \leq w_2(t) \leq \cdots \leq w_{20}(t)$. This models realistic progressive failure.
+
+\subsection{4. Non-Negative Stiffness Loss (LoT2)}
+
+\begin{equation}
+\mathcal{L}_{\text{pos}} = \sum_{i} \max(0, -\lambda_i(H_{\text{evolved}}))
+\end{equation}
+
+Penalizes negative eigenvalues of the evolved stiffness matrix. Prevents unphysical "stiffness collapse."
+
+\subsection{5. Composite Loss}
+
+\begin{equation}
+\mathcal{L}_{\text{total}} = \alpha \mathcal{L}_{\text{data}} + \beta \mathcal{L}_{\text{freq}} + \gamma (\mathcal{L}_{1,\text{mon}} + \mathcal{L}_{2,\text{mon}}) + \delta \mathcal{L}_{\text{pos}}
+\end{equation}
+
+Weights ($\alpha, \beta, \gamma, \delta$) balance data-driven learning with physics constraints. They are tuned via hyperparameter search and XAI analysis.
+
+\subsubsection{Code}
+
+\begin{lstlisting}
+class PhysicsLosses(nn.Module):
+    def composite_loss(self, pred_freq, analytical_freq, w_gates,
+                      H_evolved, true_freq,
+                      alpha=1.0, beta=0.5, gamma=0.3, delta=0.2):
+
+        data_loss = MSE(pred_freq, true_freq)
+        freq_loss = MSE(pred_freq, analytical_freq)
+        mono_loss = sum(max(0, w_n - w_{n+1}) for n in 1:20)
+        pos_loss = sum(max(0, -eig) for eig in eigs(H_evolved))
+
+        total = alpha*data_loss + beta*freq_loss + gamma*mono_loss + delta*pos_loss
+        return total
+\end{lstlisting}
+
+\section{Training Pipeline}
+
+\subsection{Data Preparation}
+
+\textbf{Two data sources:}
+\begin{enumerate}
+  \item \textbf{High-fidelity FEM data} (~300 scenarios): Soil-pile stiffness matrices computed via finite element analysis for diverse soil/pile combinations.
+  \item \textbf{Scaled physical experiments} (~30 tests): Real laboratory data from centrifuge tests measuring frequency shifts during cyclic loading.
+\end{enumerate}
+
+\textbf{Preprocessing:}
+\begin{enumerate}
+  \item Normalize all inputs to zero mean, unit variance
+  \item Scale load sequences (normalize by peak load)
+  \item Assign higher loss weights to experimental data (more reliable)
+\end{enumerate}
+
+\subsection{Two-Stage Training}
+
+\subsubsection{Stage 1: Pre-train Slot-Attention Module}
+\begin{enumerate}
+  \item Input: ~300 FEM-derived soil/pile parameters
+  \item Target: FEM-extracted stiffness matrices $H_0, H_1, \ldots, H_{20}$
+  \item Train-test split: 85--15\%
+  \item Monitor: MSE, $R^2$, early stopping
+  \item Enforce: Physics losses (LoT1, LoT2)
+  \item Outcome: Pre-trained slot-attention with robust behavior
+\end{enumerate}
+
+\subsubsection{Stage 2: Train End-to-End Transformer}
+\begin{enumerate}
+  \item Input: Load time series + soil/pile parameters
+  \item Target: Measured natural frequency shifts $f_0^{\text{OWT}}$
+  \item Data: Combine ~300 analytical and ~30 experimental load-$f_0$ pairs
+  \item Assign lower learning rate to slot-attention (fine-tune only)
+  \item Monitor: MSE, $R^2$, early stopping
+  \item Enforce: Composite loss (data + physics)
+  \item Reserve: 3 out-of-domain experiments for final validation
+\end{enumerate}
+
+\subsection{Validation Metrics}
+
+\begin{itemize}
+  \item \textbf{MSE:} Mean squared error (model fitting accuracy)
+  \item \textbf{$R^2$ Score:} Coefficient of determination (fraction of variance explained)
+  \item \textbf{NRMSE:} Normalized root-mean-square error
+  \item \textbf{MAPE:} Mean absolute percentage error (target: $< 1\%$ for critical designs)
+  \item \textbf{Bias Index:} Systematic over/under-prediction (target: $< 5\%$)
+\end{itemize}
+
+\section{Explainability (XAI)}
+
+To ensure the model is trustworthy and interpretable:
+
+\subsection{Attention Heat Maps}
+
+Visualize which input features the model ``attends to'' at each layer:
+\begin{itemize}
+  \item Slot-Attention: Which soil parameters drive stiffness calibration?
+  \item Transformer Decoder: Which load steps most influence frequency prediction?
+\end{itemize}
+
+\subsection{Attention Roll-Out}
+
+Propagate attention weights backward to compute end-to-end feature attribution: Which original inputs most influence the final frequency prediction?
+
+\subsection{Physics Verification}
+
+Compare attention patterns to known physical expectations:
+\begin{itemize}
+  \item Does model focus on peak loads (physically expected)?
+  \item Does it identify foundation stiffness as critical?
+  \item Are time-order dependencies respected?
+\end{itemize}
+
+If patterns deviate from expectations, refine physics constraints or training data.
+
+\section{Usage Example}
+
+\begin{lstlisting}
+# Initialize model
+model = SimpleTransformer(input_dim=8, hidden_dim=64)
+optimizer = Adam(model.parameters(), lr=1e-3)
+physics_losses = PhysicsLosses()
+
+# Training loop
+for epoch in range(num_epochs):
+    for batch in data_loader:
+        # Get predictions
+        load_sequence, soil_params, true_freq, analytical_freq = batch
+        pred_freq, H_evolved = model(load_sequence, soil_params)
+
+        # Get calibration outputs for loss
+        H0, H_drops, w_gates = model.calibration(soil_params)
+
+        # Compute loss
+        total_loss, loss_dict = physics_losses.composite_loss(
+            pred_freq, analytical_freq, w_gates, H_evolved, true_freq
+        )
+
+        # Backward pass
+        optimizer.zero_grad()
+        total_loss.backward()
+        optimizer.step()
+
+# Inference on new OWT scenario
+new_load_seq = load_history_from_typhoon()  # (1, T, 1)
+new_soil_params = measured_soil_properties()  # (1, 8)
+predicted_freq, evolved_stiffness = model(new_load_seq, new_soil_params)
+print(f"Predicted frequency shift: {predicted_freq:.4f} Hz")
+print(f"Evolved stiffness:\n{evolved_stiffness}")
+\end{lstlisting}
+
+\section{Summary}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{Component} & \textbf{Purpose} & \textbf{Key Innovation} \\
+\hline
+Slot-Attention & Auto-calibrate stiffness & Learns from soil parameters \\
+\hline
+TIM Formulation & Model degradation & Smooth activation gates \\
+\hline
+Transformer & Sequence reasoning & Captures load history effects \\
+\hline
+Physics Losses & Enforce laws of mechanics & LoT1 \& LoT2 constraints \\
+\hline
+Attention-based XAI & Model transparency & Reveals what model learns \\
+\hline
+\end{tabular}
+\end{table}
+
+\section{Key Advantages}
+
+\begin{enumerate}
+  \item \textbf{Self-calibrating:} No manual tuning needed for new soil-pile combinations
+  \item \textbf{Physics-aware:} Respects thermodynamic laws, improving generalization
+  \item \textbf{Explainable:} Attention maps show what the model learned
+  \item \textbf{Rapid:} Transformer inference in milliseconds (suitable for real-time digital twins)
+  \item \textbf{Robust:} Pre-training on abundant FEM data compensates for scarce experimental data
+\end{enumerate}
+
+\end{document}
